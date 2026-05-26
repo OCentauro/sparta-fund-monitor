@@ -1,0 +1,5 @@
+git add .
+git commit -m "feat: secure token injection + P/FFO metrics"
+git branch -M main
+git remote add origin https://github.com/OCentauro/sparta-fund-monitor.git
+git push -u origin main

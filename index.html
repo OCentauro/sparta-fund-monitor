@@ -1,11 +1,210 @@
-<!-- ... (mantenha o head igual) ... -->
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f172a">
+  <title>Sparta Fund Monitor</title>
+  <style>
+    :root {
+      --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --muted: #64748b;
+      --accent: #2563eb; --border: #e2e8f0; --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b1120; --card: #111827; --text: #e5e7eb; --muted: #9ca3af;
+        --border: #1f2937; --shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; padding: 20px; }
+    header { max-width: 1200px; margin: 0 auto 30px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+    h1 { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.5px; }
+    .meta { color: var(--muted); font-size: 0.875rem; }
+    button { background: var(--accent); color: #fff; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 0.875rem; font-weight: 500; transition: opacity 0.2s; }
+    button:hover { opacity: 0.9; } button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; max-width: 1200px; margin: 0 auto; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: var(--shadow); transition: transform 0.2s; }
+    .card:hover { transform: translateY(-2px); }
+    .ticker { font-weight: 700; font-size: 1.125rem; margin-bottom: 4px; }
+    .name { color: var(--muted); font-size: 0.8rem; margin-bottom: 12px; }
+    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+    .metric { background: var(--bg); padding: 8px; border-radius: 8px; text-align: center; }
+    .metric .label { display: block; font-size: 0.7rem; color: var(--muted); text-transform: uppercase; }
+    .metric .value { font-weight: 600; font-size: 0.95rem; }
+    .links { display: flex; gap: 8px; flex-wrap: wrap; }
+    .link { flex: 1; padding: 6px; text-align: center; border-radius: 6px; text-decoration: none; font-size: 0.8rem; font-weight: 500; border: 1px solid var(--border); color: var(--text); background: var(--bg); }
+    .link:hover { background: var(--border); }
+    .status { text-align: center; color: var(--muted); padding: 40px 20px; }
+    .skeleton { background: var(--border); height: 20px; border-radius: 4px; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    .note { font-size: 0.7rem; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+    .last-update { font-size: 0.75rem; color: var(--accent); margin-top: 4px; }
+    @media (max-width: 480px) { header { flex-direction: column; align-items: flex-start; } .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
 <body>
-  <!-- ... (mantenha o header/main igual) ... -->
-  
-  <!-- 1. Carrega o token (gerado localmente ou pelo CI/CD) -->
-  <script src="token.js" defer></script>
-  <!-- 2. Fallback se o arquivo não existir (evita erro de carregamento) -->
-  <script>if(typeof window.BRAPIDEV_TOKEN === 'undefined') window.BRAPIDEV_TOKEN = '';</script>
-  <!-- 3. App principal -->
-  <script src="app.js" defer></script>
+  <header>
+    <div>
+      <h1>Sparta Fund Monitor</h1>
+      <div class="meta">Monitoramento de fundos geridos pela Sparta Asset Management</div>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <span id="last-update" class="meta">Aguardando...</span>
+      <button id="refresh-btn">Atualizar</button>
+    </div>
+  </header>
+
+  <main id="grid" class="grid"></main>
+
+  <script>
+    const API_KEY = '7EpuGco9ML58FkFmZVyBWY'; 
+    const FUNDS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11'];
+    const BASE_URL = 'https://brapi.dev/api/quote';
+    
+    // 📊 Dados fundamentais - ATUALIZE MENSALMENTE via script Python
+    const FUNDAMENTALS = {
+      "JURO11": {
+            "pvp": 0.82,
+            "pffo": 8.4,
+            "dy": 0.95,
+            "updated": "2026-06-15"
+      },
+      "DIVS11": {
+            "pvp": 0.91,
+            "pffo": 9.1,
+            "dy": 0.88,
+            "updated": "2026-06-15"
+      },
+      "CRAA11": {
+            "pvp": 0.88,
+            "pffo": 7.9,
+            "dy": 0.92,
+            "updated": "2026-06-15"
+      },
+      "CDII11": {
+            "pvp": 0.94,
+            "pffo": 8.7,
+            "dy": 0.85,
+            "updated": "2026-06-15"
+      }
+    };
+
+    const grid = document.getElementById('grid');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const lastUpdateEl = document.getElementById('last-update');
+    const cacheKey = 'sparta_price_cache';
+    const cacheTimeKey = 'sparta_price_ts';
+    const CACHE_TIME = 60 * 60 * 1000;
+
+    function formatNumber(val, decimals = 2, suffix = '') {
+      if (val === null || val === undefined || isNaN(val)) return '-';
+      return Number(val).toFixed(decimals) + suffix;
+    }
+
+    function createCard(priceData) {
+      const { symbol, regularMarketPrice } = priceData;
+      const fund = FUNDAMENTALS[symbol] || {};
+      const googleUrl = `https://www.google.com/finance/quote/${symbol}:BVMF`;
+      const spartaUrl = `https://spartaasset.com.br/fundos-investimento-imobiliario/${symbol.toLowerCase()}/`;
+
+      return `
+        <div class="card">
+          <div class="ticker">${symbol}</div>
+          <div class="name">Fundo Sparta Asset Management</div>
+          <div class="metrics">
+            <div class="metric">
+              <span class="label">Preço</span>
+              <span class="value">R$ ${formatNumber(regularMarketPrice)}</span>
+            </div>
+            <div class="metric">
+              <span class="label">P/VP</span>
+              <span class="value">${formatNumber(fund.pvp)}</span>
+            </div>
+            <div class="metric">
+              <span class="label">P/FFO</span>
+              <span class="value">${formatNumber(fund.pffo)}</span>
+            </div>
+            <div class="metric">
+              <span class="label">DY</span>
+              <span class="value">${formatNumber(fund.dy, 2)}%</span>
+            </div>
+          </div>
+          <div class="links">
+            <a href="${googleUrl}" target="_blank" class="link">Google Finance</a>
+            <a href="${spartaUrl}" target="_blank" class="link">Sparta RI</a>
+          </div>
+          <div class="note">📊 Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}. P/FFO é o padrão institucional para FIIs.</div>
+        </div>
+      `;
+    }
+
+    function renderSkeleton() {
+      grid.innerHTML = Array(FUNDS.length).fill('').map(() => `
+        <div class="card">
+          <div class="skeleton" style="width: 60%; height: 24px; margin-bottom: 8px;"></div>
+          <div class="skeleton" style="width: 40%; height: 16px; margin-bottom: 16px;"></div>
+          <div class="metrics">
+            ${Array(4).fill('').map(() => `<div class="metric"><div class="skeleton" style="height: 14px;"></div></div>`).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function fetchPrices() {
+      const now = Date.now();
+      const cached = localStorage.getItem(cacheKey);
+      const cachedTs = localStorage.getItem(cacheTimeKey);
+
+      if (cached && cachedTs && (now - Number(cachedTs) < CACHE_TIME)) {
+        return JSON.parse(cached);
+      }
+
+      try {
+        const requests = FUNDS.map(ticker => 
+          fetch(`${BASE_URL}/${ticker}?token=${API_KEY}`).then(r => r.json())
+        );
+        const results = await Promise.all(requests);
+        const prices = results
+          .filter(r => r.results?.length)
+          .map(r => ({ symbol: r.results[0].symbol, regularMarketPrice: r.results[0].regularMarketPrice }));
+        
+        localStorage.setItem(cacheKey, JSON.stringify(prices));
+        localStorage.setItem(cacheTimeKey, String(now));
+        return prices;
+      } catch (err) {
+        console.error('Erro ao buscar preços:', err);
+        return [];
+      }
+    }
+
+    async function fetchData(force = false) {
+      if (force) localStorage.removeItem(cacheKey);
+      
+      refreshBtn.disabled = true;
+      refreshBtn.textContent = 'Atualizando...';
+      renderSkeleton();
+
+      const prices = await fetchPrices();
+      const valid = FUNDS.map(ticker => {
+        const price = prices.find(p => p.symbol === ticker);
+        return price ? { ...price } : { symbol: ticker, regularMarketPrice: null };
+      });
+
+      renderData(valid);
+      const lastFundUpdate = Object.values(FUNDAMENTALS)[0]?.updated || 'n/a';
+      lastUpdateEl.textContent = `Preço: ${new Date().toLocaleTimeString('pt-BR')} | Fund: ${lastFundUpdate}`;
+      
+      refreshBtn.disabled = false;
+      refreshBtn.textContent = 'Atualizar';
+    }
+
+    function renderData(data) {
+      grid.innerHTML = data.map(createCard).join('');
+    }
+
+    refreshBtn.addEventListener('click', () => fetchData(true));
+    fetchData();
+  </script>
 </body>
+</html>

@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0f172a">
+
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="SpartaFII">
+
   <title>Sparta Fund Monitor</title>
   <style>
     :root {
@@ -43,6 +48,17 @@
     @media (max-width: 480px) { header { flex-direction: column; align-items: flex-start; } .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
+
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sparta-fund-monitor/sw.js')
+        .then(reg => console.log('✅ SW registrado'))
+        .catch(err => console.log('❌ SW falhou:', err));
+    });
+  }
+</script>
+
 <body>
   <header>
     <div>

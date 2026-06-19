@@ -4,12 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0f172a">
-
-<link rel="manifest" href="manifest.json">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="SpartaFII">
-
   <title>Sparta Fund Monitor</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="SpartaFII">
   <style>
     :root {
       --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --muted: #64748b;
@@ -44,21 +42,9 @@
     .skeleton { background: var(--border); height: 20px; border-radius: 4px; animation: pulse 1.5s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     .note { font-size: 0.7rem; color: var(--muted); margin-top: 6px; line-height: 1.4; }
-    .last-update { font-size: 0.75rem; color: var(--accent); margin-top: 4px; }
     @media (max-width: 480px) { header { flex-direction: column; align-items: flex-start; } .grid { grid-template-columns: 1fr; } }
   </style>
 </head>
-
-<script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sparta-fund-monitor/sw.js')
-        .then(reg => console.log('✅ SW registrado'))
-        .catch(err => console.log('❌ SW falhou:', err));
-    });
-  }
-</script>
-
 <body>
   <header>
     <div>
@@ -78,28 +64,12 @@
     const FUNDS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11'];
     const BASE_URL = 'https://brapi.dev/api/quote';
     
-    // 📊 Carrega dados fundamentais do arquivo JSON local
-let FUNDAMENTALS = {const FUNDAMENTALS = {
-  "JURO11": { "pvp": 0.95, "pffo": 8.5, "dy": 11.69, "updated": "2026-06-19" },
-  "DIVS11": { "pvp": 1.00, "pffo": 10.2, "dy": 13.00, "updated": "2026-06-19" },
-  "CRAA11": { "pvp": 1.00, "pffo": 9.7, "dy": 14.95, "updated": "2026-06-19" },
-  "CDII11": { "pvp": 1.00, "pffo": 9.9, "dy": 17.09, "updated": "2026-06-19" }
-};
-
-async function loadFundamentals() {
-  try {
-    const response = await fetch('fundamentals.json');
-    FUNDAMENTALS = await response.json();
-    console.log('✅ Fundamentos carregados:', FUNDAMENTALS);
-    // Re-renderiza os cards com os dados corretos
-    fetchData(); 
-  } catch (error) {
-    console.error('❌ Erro ao carregar fundamentals.json:', error);
-  }
-}
-
-// Chama o carregamento ao iniciar
-loadFundamentals();
+    const FUNDAMENTALS = {
+      "JURO11": { "pvp": 0.95, "pffo": 8.5, "dy": 11.69, "updated": "2026-06-19" },
+      "DIVS11": { "pvp": 1.00, "pffo": 10.2, "dy": 13.00, "updated": "2026-06-19" },
+      "CRAA11": { "pvp": 1.00, "pffo": 9.7, "dy": 14.95, "updated": "2026-06-19" },
+      "CDII11": { "pvp": 1.00, "pffo": 9.9, "dy": 17.09, "updated": "2026-06-19" }
+    };
 
     const grid = document.getElementById('grid');
     const refreshBtn = document.getElementById('refresh-btn');
@@ -216,6 +186,16 @@ loadFundamentals();
 
     refreshBtn.addEventListener('click', () => fetchData(true));
     fetchData();
+  </script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sparta-fund-monitor/sw.js')
+          .then(reg => console.log('✅ SW registrado'))
+          .catch(err => console.log('❌ SW falhou:', err));
+      });
+    }
   </script>
 </body>
 </html>

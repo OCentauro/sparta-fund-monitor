@@ -63,13 +63,25 @@
     const API_KEY = '7EpuGco9ML58FkFmZVyBWY'; 
     const FUNDS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11'];
     const BASE_URL = 'https://brapi.dev/api/quote';
+
     
-    const FUNDAMENTALS = {
-      "JURO11": { "pvp": 0.95, "pffo": 8.5, "dy": 11.69, "updated": "2026-06-19" },
-      "DIVS11": { "pvp": 1.00, "pffo": 10.2, "dy": 13.00, "updated": "2026-06-19" },
-      "CRAA11": { "pvp": 1.00, "pffo": 9.7, "dy": 14.95, "updated": "2026-06-19" },
-      "CDII11": { "pvp": 1.00, "pffo": 9.9, "dy": 17.09, "updated": "2026-06-19" }
-    };
+    
+// No topo do script, substitua const FUNDAMENTALS = {...} por:
+let FUNDAMENTALS = {};
+
+async function loadFundamentals() {
+  try {
+    const response = await fetch('fundamentals.json');
+    FUNDAMENTALS = await response.json();
+    console.log('✅ Fundamentos carregados');
+  } catch (error) {
+    console.error('❌ Erro ao carregar fundamentals.json:', error);
+  }
+}
+
+// Chame loadFundamentals() antes de fetchData()
+loadFundamentals().then(() => fetchData());
+
 
     const grid = document.getElementById('grid');
     const refreshBtn = document.getElementById('refresh-btn');

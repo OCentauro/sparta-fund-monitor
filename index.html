@@ -200,14 +200,22 @@ loadFundamentals().then(() => fetchData());
     fetchData();
   </script>
 
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sparta-fund-monitor/sw.js')
-          .then(reg => console.log('✅ SW registrado'))
-          .catch(err => console.log('❌ SW falhou:', err));
-      });
-    }
-  </script>
+ <script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sparta-fund-monitor/sw.js', {
+        updateViaCache: 'none' // Força verificação de atualização
+      })
+        .then(reg => {
+          console.log('✅ SW registrado');
+          // Verifica atualizações a cada 1 hora
+          setInterval(() => {
+            reg.update();
+          }, 60 * 60 * 1000);
+        })
+        .catch(err => console.log('❌ SW falhou:', err));
+    });
+  }
+</script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sparta-fund-monitor-v1';
+const CACHE_NAME = 'sparta-fund-monitor-v2'; // Mudou de v1 para v2
 const urlsToCache = [
   '/sparta-fund-monitor/',
   '/sparta-fund-monitor/index.html'

@@ -138,6 +138,15 @@ loadFundamentals().then(() => {
       }
     }
 
+    // 📍 Declaração das variáveis (PRIMEIRO - antes de qualquer função que as use)
+    const grid = document.getElementById('grid');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const lastUpdateEl = document.getElementById('last-update');
+    const cacheKey = 'sparta_price_cache';
+    const cacheTimeKey = 'sparta_price_ts';
+    const CACHE_TIME = 60 * 60 * 1000;
+
+    // 📍 Função fetchData (DEPOIS das variáveis)
     async function fetchData(force = false) {
       if (force) localStorage.removeItem(cacheKey);
       
@@ -159,30 +168,36 @@ loadFundamentals().then(() => {
       refreshBtn.textContent = 'Atualizar';
     }
 
+    // 📍 Função renderData
     function renderData(data) {
       grid.innerHTML = data.map(createCard).join('');
     }
 
+    // 📍 Event listener do botão
     refreshBtn.addEventListener('click', () => fetchData(true));
-    fetchData();
+
+    // 📍 Inicialização do app (POR ÚLTIMO)
+    loadFundamentals().then(() => {
+      fetchData();
+      showFundamentalsDate();
+    });
   </script>
 
- <script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sparta-fund-monitor/sw.js', {
-        updateViaCache: 'none' // Força verificação de atualização
-      })
-        .then(reg => {
-          console.log('✅ SW registrado');
-          // Verifica atualizações a cada 1 hora
-          setInterval(() => {
-            reg.update();
-          }, 60 * 60 * 1000);
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sparta-fund-monitor/sw.js', {
+          updateViaCache: 'none'
         })
-        .catch(err => console.log('❌ SW falhou:', err));
-    });
-  }
-</script>
+          .then(reg => {
+            console.log('✅ SW registrado');
+            setInterval(() => {
+              reg.update();
+            }, 60 * 60 * 1000);
+          })
+          .catch(err => console.log('❌ SW falhou:', err));
+      });
+    }
+  </script>
 </body>
 </html>

@@ -47,9 +47,13 @@
 </head>
 <body>
   <header>
-    <div>
+     <div>
       <h1>Sparta Fund Monitor</h1>
       <div class="meta">Monitoramento de fundos geridos pela Sparta Asset Management</div>
+      <!-- 📅 Novo selo de data dos fundamentos -->
+      <div id="fundamentals-badge" class="meta" style="margin-top: 6px; color: #10b981; font-weight: 600; display: none;">
+        📅 Fundamentos atualizados em: <span id="fund-date-text">...</span>
+      </div>
     </div>
     <div style="display: flex; gap: 10px; align-items: center;">
       <span id="last-update" class="meta">Aguardando...</span>
@@ -79,58 +83,21 @@ async function loadFundamentals() {
   }
 }
 
-// Chame loadFundamentals() antes de fetchData()
-loadFundamentals().then(() => fetchData());
+// Função para exibir a data de atualização dos fundamentos
+function showFundamentalsDate() {
+  const firstFund = Object.values(FUNDAMENTALS)[0];
+  if (firstFund && firstFund.updated) {
+    const [year, month, day] = firstFund.updated.split('-');
+    document.getElementById('fund-date-text').textContent = `${day}/${month}/${year}`;
+    document.getElementById('fundamentals-badge').style.display = 'inline-block';
+  }
+}
 
-
-    const grid = document.getElementById('grid');
-    const refreshBtn = document.getElementById('refresh-btn');
-    const lastUpdateEl = document.getElementById('last-update');
-    const cacheKey = 'sparta_price_cache';
-    const cacheTimeKey = 'sparta_price_ts';
-    const CACHE_TIME = 60 * 60 * 1000;
-
-    function formatNumber(val, decimals = 2, suffix = '') {
-      if (val === null || val === undefined || isNaN(val)) return '-';
-      return Number(val).toFixed(decimals) + suffix;
-    }
-
-    function createCard(priceData) {
-      const { symbol, regularMarketPrice } = priceData;
-      const fund = FUNDAMENTALS[symbol] || {};
-      const googleUrl = `https://www.google.com/finance/quote/${symbol}:BVMF`;
-      const spartaUrl = `https://spartaasset.com.br/fundos-investimento-imobiliario/${symbol.toLowerCase()}/`;
-
-      return `
-        <div class="card">
-          <div class="ticker">${symbol}</div>
-          <div class="name">Fundo Sparta Asset Management</div>
-          <div class="metrics">
-            <div class="metric">
-              <span class="label">Preço</span>
-              <span class="value">R$ ${formatNumber(regularMarketPrice)}</span>
-            </div>
-            <div class="metric">
-              <span class="label">P/VP</span>
-              <span class="value">${formatNumber(fund.pvp)}</span>
-            </div>
-            <div class="metric">
-              <span class="label">P/FFO</span>
-              <span class="value">${formatNumber(fund.pffo)}</span>
-            </div>
-            <div class="metric">
-              <span class="label">DY</span>
-              <span class="value">${formatNumber(fund.dy, 2)}%</span>
-            </div>
-          </div>
-          <div class="links">
-            <a href="${googleUrl}" target="_blank" class="link">Google Finance</a>
-            <a href="${spartaUrl}" target="_blank" class="link">Sparta RI</a>
-          </div>
-          <div class="note">📊 Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}. P/FFO é o padrão institucional para FIIs.</div>
-        </div>
-      `;
-    }
+// Inicializa o app carregando os fundamentos primeiro
+loadFundamentals().then(() => {
+  fetchData();
+  showFundamentalsDate(); // Exibe a data no topo
+});
 
     function renderSkeleton() {
       grid.innerHTML = Array(FUNDS.length).fill('').map(() => `

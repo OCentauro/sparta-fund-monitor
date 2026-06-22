@@ -138,7 +138,7 @@ loadFundamentals().then(() => {
       }
     }
 
-    // 📍 Declaração das variáveis (PRIMEIRO - antes de qualquer função que as use)
+    // 📍 Declaração das variáveis (PRIMEIRO)
     const grid = document.getElementById('grid');
     const refreshBtn = document.getElementById('refresh-btn');
     const lastUpdateEl = document.getElementById('last-update');
@@ -146,7 +146,92 @@ loadFundamentals().then(() => {
     const cacheTimeKey = 'sparta_price_ts';
     const CACHE_TIME = 60 * 60 * 1000;
 
-    // 📍 Função fetchData (DEPOIS das variáveis)
+    // 📍 Função formatNumber
+    function formatNumber(val, decimals = 2, suffix = '') {
+      if (val === null || val === undefined || isNaN(val)) return '-';
+      return Number(val).toFixed(decimals) + suffix;
+    }
+
+    // 📍 Função createCard (DEVE VIR ANTES DE renderData)
+    function createCard(priceData) {
+      const { symbol, regularMarketPrice } = priceData;
+      const fund = FUNDAMENTALS[symbol] || {};
+      const googleUrl = `https://www.google.com/finance/quote/${symbol}:BVMF`;
+      const spartaUrl = `https://spartaasset.com.br/fundos-investimento-imobiliario/${symbol.toLowerCase()}/`;
+
+      return `
+        <div class="card">
+          <div class="ticker">${symbol}</div>
+          <div class="name">Fundo Sparta Asset Management</div>
+          <div class="metrics">
+            <div class="metric">
+              <span class="label">Preço</span>
+              <span class="value">R$ ${formatNumber(regularMarketPrice)}</span>
+            </div>
+            <div class="metric">
+              <span class="label">P/VP</span>
+              <span class="value">${formatNumber(fund.pvp)}</span>
+            </div>
+            <div class="metric">
+              <span class="label">P/FFO</span>
+              <span class="value">${formatNumber(fund.pffo)}</span>
+            </div>
+            <div class="metric">
+              <span class="label">DY</span>
+              <span class="value">${formatNumber(fund.dy, 2)}%</span>
+            </div>
+          </div>
+          <div class="links">
+            <a href="${googleUrl}" target="_blank" class="link">Google Finance</a>
+            <a href="${spartaUrl}" target="_blank" class="link">Sparta RI</a>
+          </div>
+          <div class="note">📊 Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}. P/FFO é o padrão institucional para FIIs.</div>
+        </div>
+      `;
+    }
+
+    // 📍 Função renderSkeleton
+    function renderSkeleton() {
+      grid.innerHTML = Array(FUNDS.length).fill('').map(() => `
+        <div class="card">
+          <div class="skeleton" style="width: 60%; height: 24px; margin-bottom: 8px;"></div>
+          <div class="skeleton" style="width: 40%; height: 16px; margin-bottom: 16px;"></div>
+          <div class="metrics">
+            ${Array(4).fill('').map(() => `<div class="metric"><div class="skeleton" style="height: 14px;"></div></div>`).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // 📍 Função fetchPrices
+    async function fetchPrices() {
+      const now = Date.now();
+      const cached = localStorage.getItem(cacheKey);
+      const cachedTs = localStorage.getItem(cacheTimeKey);
+
+      if (cached && cachedTs && (now - Number(cachedTs) < CACHE_TIME)) {
+        return JSON.parse(cached);
+      }
+
+      try {
+        const requests = FUNDS.map(ticker => 
+          fetch(`https://brapi.dev/api/quote/${ticker}?token=7EpuGco9ML58FkFmZVyBWY`).then(r => r.json())
+        );
+        const results = await Promise.all(requests);
+        const prices = results
+          .filter(r => r.results?.length)
+          .map(r => ({ symbol: r.results[0].symbol, regularMarketPrice: r.results[0].regularMarketPrice }));
+        
+        localStorage.setItem(cacheKey, JSON.stringify(prices));
+        localStorage.setItem(cacheTimeKey, String(now));
+        return prices;
+      } catch (err) {
+        console.error('Erro ao buscar preços:', err);
+        return [];
+      }
+    }
+
+    // 📍 Função fetchData
     async function fetchData(force = false) {
       if (force) localStorage.removeItem(cacheKey);
       

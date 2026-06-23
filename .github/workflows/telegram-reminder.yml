@@ -1,0 +1,20 @@
+name: Telegram Reminder - Update Fundamentals
+
+on:
+  schedule:
+    # Roda todo dia 11 do mês às 12:00 UTC (09:00 da manhã no horário de Brasília)
+    - cron: '0 12 11 * *'
+  workflow_dispatch: # Permite testar manualmente
+
+jobs:
+  send-reminder:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram Message
+        run: |
+          MESSAGE="📅 *Lembrete Mensal: Atualização de Fundamentos*\n\nOlá! Hoje é dia 11. É hora de atualizar os indicadores (P/VP, P/FFO, DY) no Sparta Fund Monitor.\n\n🔗 *Clique abaixo para editar o arquivo diretamente no GitHub:*\nhttps://github.com/OCentauro/sparta-fund-monitor/edit/main/fundamentals.json\n\n *Fontes para consulta:*\n- StatusInvest\n- Investidor10"
+          
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+            -d text="$MESSAGE" \
+            -d parse_mode="Markdown"

@@ -283,26 +283,43 @@
         errorEl.style.display = 'block';
       }
     }
+// Acrescido dos titulos das colunas do formulario de atualização
 
-    function showEditModal() {
-      const form = document.getElementById('edit-form');
-      form.innerHTML = FUNDS.map(ticker => {
-        const fund = FUNDAMENTALS[ticker] || {};
-        return `
-          <div class="form-group">
-            <label>${ticker}</label>
-            <div class="form-row">
-              <input type="number" step="0.01" id="pvp-${ticker}" placeholder="P/VP" value="${fund.pvp || ''}">
-              <input type="number" step="0.01" id="pffo-${ticker}" placeholder="P/FFO" value="${fund.pffo || ''}">
-              <input type="number" step="0.01" id="dy-${ticker}" placeholder="DY %" value="${fund.dy || ''}">
-            </div>
-          </div>
-        `;
-      }).join('');
-      
-      document.getElementById('edit-modal').classList.add('active');
-      document.getElementById('edit-status').textContent = '';
-    }
+function showEditModal() {
+  const form = document.getElementById('edit-form');
+  
+  // Cabeçalho das colunas
+  const header = `
+    <div class="form-group">
+      <div class="form-row" style="font-weight: 600; font-size: 0.875rem; color: var(--muted); padding: 0 8px;">
+        <div>Ticker</div>
+        <div style="text-align: center;">P/VP</div>
+        <div style="text-align: center;">P/FFO</div>
+        <div style="text-align: center;">DY %</div>
+      </div>
+      <hr style="margin: 8px 0; border: none; border-top: 1px solid var(--border);">
+    </div>
+  `;
+  
+  // Linhas dos fundos
+  const rows = FUNDS.map(ticker => {
+    const fund = FUNDAMENTALS[ticker] || {};
+    return `
+      <div class="form-group">
+        <div class="form-row">
+          <div style="display: flex; align-items: center; font-weight: 600;">${ticker}</div>
+          <input type="number" step="0.01" id="pvp-${ticker}" placeholder="P/VP" value="${fund.pvp || ''}">
+          <input type="number" step="0.01" id="pffo-${ticker}" placeholder="P/FFO" value="${fund.pffo || ''}">
+          <input type="number" step="0.01" id="dy-${ticker}" placeholder="DY %" value="${fund.dy || ''}">
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  form.innerHTML = header + rows;
+  document.getElementById('edit-modal').classList.add('active');
+  document.getElementById('edit-status').textContent = '';
+}
 
     function closeEditModal() {
       document.getElementById('edit-modal').classList.remove('active');

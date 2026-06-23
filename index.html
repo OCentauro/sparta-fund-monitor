@@ -8,10 +8,17 @@
   <link rel="manifest" href="manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="SpartaFII">
+  
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  
   <style>
     :root {
       --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --muted: #64748b;
       --accent: #2563eb; --border: #e2e8f0; --shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+      --success: #10b981; --danger: #ef4444;
     }
     @media (prefers-color-scheme: dark) {
       :root {
@@ -26,6 +33,8 @@
     .meta { color: var(--muted); font-size: 0.875rem; }
     button { background: var(--accent); color: #fff; border: none; padding: 8px 14px; border-radius: 8px; cursor: pointer; font-size: 0.875rem; font-weight: 500; transition: opacity 0.2s; }
     button:hover { opacity: 0.9; } button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button.secondary { background: var(--border); color: var(--text); }
+    button.danger { background: var(--danger); }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; max-width: 1200px; margin: 0 auto; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; box-shadow: var(--shadow); transition: transform 0.2s; }
     .card:hover { transform: translateY(-2px); }
@@ -42,62 +51,305 @@
     .skeleton { background: var(--border); height: 20px; border-radius: 4px; animation: pulse 1.5s infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
     .note { font-size: 0.7rem; color: var(--muted); margin-top: 6px; line-height: 1.4; }
-    @media (max-width: 480px) { header { flex-direction: column; align-items: flex-start; } .grid { grid-template-columns: 1fr; } }
+    #fundamentals-badge { margin-top: 6px; color: var(--success); font-weight: 600; display: none; }
+    
+    /* Modal */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; padding: 20px; }
+    .modal.active { display: flex; }
+    .modal-content { background: var(--card); border-radius: 12px; padding: 24px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; }
+    .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+    .modal-header h2 { font-size: 1.25rem; }
+    .close-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--muted); padding: 0; width: 30px; height: 30px; }
+    .form-group { margin-bottom: 16px; }
+    .form-group label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.875rem; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+    .form-row input { padding: 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 0.875rem; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+    .login-form { display: flex; flex-direction: column; gap: 12px; }
+    .login-form input { padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font-size: 0.9rem; }
+    .user-info { display: flex; gap: 8px; align-items: center; font-size: 0.875rem; }
+    
+    @media (max-width: 480px) { 
+      header { flex-direction: column; align-items: flex-start; } 
+      .grid { grid-template-columns: 1fr; }
+      .form-row { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
   <header>
-     <div>
+    <div>
       <h1>Sparta Fund Monitor</h1>
       <div class="meta">Monitoramento de fundos geridos pela Sparta Asset Management</div>
-      <!-- 📅 Novo selo de data dos fundamentos -->
-      <div id="fundamentals-badge" class="meta" style="margin-top: 6px; color: #10b981; font-weight: 600; display: none;">
-        📅 Fundamentos atualizados em: <span id="fund-date-text">...</span>
-      </div>
+      <div id="fundamentals-badge">📅 Fundamentos atualizados em: <span id="fund-date-text">...</span></div>
     </div>
-    <div style="display: flex; gap: 10px; align-items: center;">
+    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
       <span id="last-update" class="meta">Aguardando...</span>
       <button id="refresh-btn">Atualizar</button>
+      <div id="auth-area">
+        <button id="login-btn" class="secondary">Login</button>
+      </div>
     </div>
   </header>
 
   <main id="grid" class="grid"></main>
 
+  <!-- Modal de Login -->
+  <div id="login-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Login de Administrador</h2>
+        <button class="close-btn" onclick="closeLoginModal()">&times;</button>
+      </div>
+      <div class="login-form">
+        <input type="email" id="login-email" placeholder="Email">
+        <input type="password" id="login-password" placeholder="Senha">
+        <div id="login-error" style="color: var(--danger); font-size: 0.875rem; display: none;"></div>
+        <button id="login-submit">Entrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Edição de Fundamentos -->
+  <div id="edit-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar Fundamentos</h2>
+        <button class="close-btn" onclick="closeEditModal()">&times;</button>
+      </div>
+      <form id="edit-form"></form>
+      <div id="edit-status" style="font-size: 0.875rem; margin-top: 10px; text-align: center;"></div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeEditModal()">Cancelar</button>
+        <button type="button" id="save-btn" onclick="saveFundamentals()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
   <script>
-    const API_KEY = '7EpuGco9ML58FkFmZVyBWY'; 
+    // 🔥 Firebase Configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyCUGI3NzVQ6VOe0AtImR9XHLscDC_kPLes",
+      authDomain: "sparta-fund-monitor.firebaseapp.com",
+      projectId: "sparta-fund-monitor",
+      storageBucket: "sparta-fund-monitor.firebasestorage.app",
+      messagingSenderId: "81992335341",
+      appId: "1:81992335341:web:affa10dda248cec15c31e4"
+    };
+    
+    firebase.initializeApp(firebaseConfig);
+    const auth = firebase.auth();
+    const db = firebase.firestore();
+
+    // 📊 Configurações
+    const API_KEY = '7EpuGco9ML58FkFmZVyBWY';
     const FUNDS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11', 'MXRF11'];
     const BASE_URL = 'https://brapi.dev/api/quote';
-
-
     
-// No topo do script, substitua const FUNDAMENTALS = {...} por:
-let FUNDAMENTALS = {};
+    // 📊 Dados fundamentais (fallback inicial)
+    let FUNDAMENTALS = {
+      "JURO11": { "pvp": 0.95, "pffo": 8.5, "dy": 11.69, "updated": "2026-06-19" },
+      "DIVS11": { "pvp": 1.00, "pffo": 10.2, "dy": 13.00, "updated": "2026-06-19" },
+      "CRAA11": { "pvp": 1.00, "pffo": 9.7, "dy": 14.95, "updated": "2026-06-19" },
+      "CDII11": { "pvp": 1.00, "pffo": 9.9, "dy": 17.09, "updated": "2026-06-19" },
+      "MXRF11": { "pvp": 0.98, "pffo": 11.5, "dy": 12.50, "updated": "2026-06-19" }
+    };
 
-async function loadFundamentals() {
-  try {
-    const response = await fetch('fundamentals.json');
-    FUNDAMENTALS = await response.json();
-    console.log('✅ Fundamentos carregados');
-  } catch (error) {
-    console.error('❌ Erro ao carregar fundamentals.json:', error);
-  }
-}
+    // 📍 Elementos do DOM
+    const grid = document.getElementById('grid');
+    const refreshBtn = document.getElementById('refresh-btn');
+    const lastUpdateEl = document.getElementById('last-update');
+    const cacheKey = 'sparta_price_cache';
+    const cacheTimeKey = 'sparta_price_ts';
+    const CACHE_TIME = 60 * 60 * 1000;
 
-// Função para exibir a data de atualização dos fundamentos
-function showFundamentalsDate() {
-  const firstFund = Object.values(FUNDAMENTALS)[0];
-  if (firstFund && firstFund.updated) {
-    const [year, month, day] = firstFund.updated.split('-');
-    document.getElementById('fund-date-text').textContent = `${day}/${month}/${year}`;
-    document.getElementById('fundamentals-badge').style.display = 'inline-block';
-  }
-}
+    // 🔥 Funções Firebase
+    function loadFundamentalsFromFirestore() {
+      return new Promise((resolve) => {
+        db.collection('fundamentals').get().then(snapshot => {
+          if (snapshot.empty) {
+            console.log('📭 Nenhum dado no Firestore, usando fallback');
+            resolve(false);
+            return;
+          }
+          
+          const newData = {};
+          snapshot.forEach(doc => {
+            newData[doc.id] = doc.data();
+          });
+          
+          FUNDAMENTALS = newData;
+          console.log('✅ Fundamentos carregados do Firestore:', FUNDAMENTALS);
+          resolve(true);
+        }).catch(err => {
+          console.error('❌ Erro ao carregar do Firestore:', err);
+          resolve(false);
+        });
+      });
+    }
 
-// Inicializa o app carregando os fundamentos primeiro
-loadFundamentals().then(() => {
-  fetchData();
-  showFundamentalsDate(); // Exibe a data no topo
-});
+    async function saveFundamentals() {
+      const saveBtn = document.getElementById('save-btn');
+      const statusEl = document.getElementById('edit-status');
+      
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Salvando...';
+      statusEl.textContent = '';
+      statusEl.style.color = '';
+      
+      try {
+        const batch = db.batch();
+        
+        FUNDS.forEach(ticker => {
+          const pvp = parseFloat(document.getElementById(`pvp-${ticker}`).value);
+          const pffo = parseFloat(document.getElementById(`pffo-${ticker}`).value);
+          const dy = parseFloat(document.getElementById(`dy-${ticker}`).value);
+          
+          const docRef = db.collection('fundamentals').doc(ticker);
+          batch.set(docRef, {
+            pvp: isNaN(pvp) ? null : pvp,
+            pffo: isNaN(pffo) ? null : pffo,
+            dy: isNaN(dy) ? null : dy,
+            updated: new Date().toISOString().split('T')[0],
+            updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+        });
+        
+        await batch.commit();
+        
+        statusEl.textContent = '✅ Dados salvos com sucesso!';
+        statusEl.style.color = 'var(--success)';
+        
+        // Recarrega os dados do Firestore para atualizar a UI
+        await loadFundamentalsFromFirestore();
+        showFundamentalsDate();
+        renderData(currentPrices);
+        
+        setTimeout(() => {
+          closeEditModal();
+        }, 1500);
+        
+      } catch (err) {
+        console.error('❌ Erro ao salvar:', err);
+        statusEl.textContent = '❌ Erro ao salvar: ' + err.message;
+        statusEl.style.color = 'var(--danger)';
+      } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Salvar';
+      }
+    }
+
+    // 🔐 Autenticação
+    function setupAuthListener() {
+      auth.onAuthStateChanged(user => {
+        const authArea = document.getElementById('auth-area');
+        if (user) {
+          authArea.innerHTML = `
+            <div class="user-info">
+              <button id="edit-btn">Editar Fundamentos</button>
+              <button id="logout-btn" class="danger">Sair</button>
+            </div>
+          `;
+          document.getElementById('edit-btn').addEventListener('click', showEditModal);
+          document.getElementById('logout-btn').addEventListener('click', () => auth.signOut());
+        } else {
+          authArea.innerHTML = `<button id="login-btn" class="secondary">Login</button>`;
+          document.getElementById('login-btn').addEventListener('click', openLoginModal);
+        }
+      });
+    }
+
+    function openLoginModal() {
+      document.getElementById('login-modal').classList.add('active');
+      document.getElementById('login-error').style.display = 'none';
+    }
+
+    function closeLoginModal() {
+      document.getElementById('login-modal').classList.remove('active');
+      document.getElementById('login-email').value = '';
+      document.getElementById('login-password').value = '';
+    }
+
+    async function handleLogin() {
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      const errorEl = document.getElementById('login-error');
+      
+      try {
+        await auth.signInWithEmailAndPassword(email, password);
+        closeLoginModal();
+      } catch (err) {
+        errorEl.textContent = '❌ ' + err.message;
+        errorEl.style.display = 'block';
+      }
+    }
+
+    function showEditModal() {
+      const form = document.getElementById('edit-form');
+      form.innerHTML = FUNDS.map(ticker => {
+        const fund = FUNDAMENTALS[ticker] || {};
+        return `
+          <div class="form-group">
+            <label>${ticker}</label>
+            <div class="form-row">
+              <input type="number" step="0.01" id="pvp-${ticker}" placeholder="P/VP" value="${fund.pvp || ''}">
+              <input type="number" step="0.01" id="pffo-${ticker}" placeholder="P/FFO" value="${fund.pffo || ''}">
+              <input type="number" step="0.01" id="dy-${ticker}" placeholder="DY %" value="${fund.dy || ''}">
+            </div>
+          </div>
+        `;
+      }).join('');
+      
+      document.getElementById('edit-modal').classList.add('active');
+      document.getElementById('edit-status').textContent = '';
+    }
+
+    function closeEditModal() {
+      document.getElementById('edit-modal').classList.remove('active');
+    }
+
+    // 📊 Funções do App
+    function formatNumber(val, decimals = 2, suffix = '') {
+      if (val === null || val === undefined || isNaN(val)) return '-';
+      return Number(val).toFixed(decimals) + suffix;
+    }
+
+    function createCard(priceData) {
+      const { symbol, regularMarketPrice } = priceData;
+      const fund = FUNDAMENTALS[symbol] || {};
+      const googleUrl = `https://www.google.com/finance/quote/${symbol}:BVMF`;
+      const spartaUrl = `https://spartaasset.com.br/fundos-investimento-imobiliario/${symbol.toLowerCase()}/`;
+
+      return `
+        <div class="card">
+          <div class="ticker">${symbol}</div>
+          <div class="name">Fundo Sparta Asset Management</div>
+          <div class="metrics">
+            <div class="metric">
+              <span class="label">Preço</span>
+              <span class="value">R$ ${formatNumber(regularMarketPrice)}</span>
+            </div>
+            <div class="metric">
+              <span class="label">P/VP</span>
+              <span class="value">${formatNumber(fund.pvp)}</span>
+            </div>
+            <div class="metric">
+              <span class="label">P/FFO</span>
+              <span class="value">${formatNumber(fund.pffo)}</span>
+            </div>
+            <div class="metric">
+              <span class="label">DY</span>
+              <span class="value">${formatNumber(fund.dy, 2)}%</span>
+            </div>
+          </div>
+          <div class="links">
+            <a href="${googleUrl}" target="_blank" class="link">Google Finance</a>
+            <a href="${spartaUrl}" target="_blank" class="link">Sparta RI</a>
+          </div>
+          <div class="note">📊 Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}. P/FFO é o padrão institucional para FIIs.</div>
+        </div>
+      `;
+    }
 
     function renderSkeleton() {
       grid.innerHTML = Array(FUNDS.length).fill('').map(() => `
@@ -138,100 +390,8 @@ loadFundamentals().then(() => {
       }
     }
 
-    // 📍 Declaração das variáveis (PRIMEIRO)
-    const grid = document.getElementById('grid');
-    const refreshBtn = document.getElementById('refresh-btn');
-    const lastUpdateEl = document.getElementById('last-update');
-    const cacheKey = 'sparta_price_cache';
-    const cacheTimeKey = 'sparta_price_ts';
-    const CACHE_TIME = 60 * 60 * 1000;
+    let currentPrices = [];
 
-    // 📍 Função formatNumber
-    function formatNumber(val, decimals = 2, suffix = '') {
-      if (val === null || val === undefined || isNaN(val)) return '-';
-      return Number(val).toFixed(decimals) + suffix;
-    }
-
-    // 📍 Função createCard (DEVE VIR ANTES DE renderData)
-    function createCard(priceData) {
-      const { symbol, regularMarketPrice } = priceData;
-      const fund = FUNDAMENTALS[symbol] || {};
-      const googleUrl = `https://www.google.com/finance/quote/${symbol}:BVMF`;
-      const spartaUrl = `https://spartaasset.com.br/fundos-investimento-imobiliario/${symbol.toLowerCase()}/`;
-
-      return `
-        <div class="card">
-          <div class="ticker">${symbol}</div>
-          <div class="name">Fundo Sparta Asset Management</div>
-          <div class="metrics">
-            <div class="metric">
-              <span class="label">Preço</span>
-              <span class="value">R$ ${formatNumber(regularMarketPrice)}</span>
-            </div>
-            <div class="metric">
-              <span class="label">P/VP</span>
-              <span class="value">${formatNumber(fund.pvp)}</span>
-            </div>
-            <div class="metric">
-              <span class="label">P/FFO</span>
-              <span class="value">${formatNumber(fund.pffo)}</span>
-            </div>
-            <div class="metric">
-              <span class="label">DY</span>
-              <span class="value">${formatNumber(fund.dy, 2)}%</span>
-            </div>
-          </div>
-          <div class="links">
-            <a href="${googleUrl}" target="_blank" class="link">Google Finance</a>
-            <a href="${spartaUrl}" target="_blank" class="link">Sparta RI</a>
-          </div>
-          <div class="note">📊 Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}. P/FFO é o padrão institucional para FIIs.</div>
-        </div>
-      `;
-    }
-
-    // 📍 Função renderSkeleton
-    function renderSkeleton() {
-      grid.innerHTML = Array(FUNDS.length).fill('').map(() => `
-        <div class="card">
-          <div class="skeleton" style="width: 60%; height: 24px; margin-bottom: 8px;"></div>
-          <div class="skeleton" style="width: 40%; height: 16px; margin-bottom: 16px;"></div>
-          <div class="metrics">
-            ${Array(4).fill('').map(() => `<div class="metric"><div class="skeleton" style="height: 14px;"></div></div>`).join('')}
-          </div>
-        </div>
-      `).join('');
-    }
-
-    // 📍 Função fetchPrices
-    async function fetchPrices() {
-      const now = Date.now();
-      const cached = localStorage.getItem(cacheKey);
-      const cachedTs = localStorage.getItem(cacheTimeKey);
-
-      if (cached && cachedTs && (now - Number(cachedTs) < CACHE_TIME)) {
-        return JSON.parse(cached);
-      }
-
-      try {
-        const requests = FUNDS.map(ticker => 
-          fetch(`https://brapi.dev/api/quote/${ticker}?token=7EpuGco9ML58FkFmZVyBWY`).then(r => r.json())
-        );
-        const results = await Promise.all(requests);
-        const prices = results
-          .filter(r => r.results?.length)
-          .map(r => ({ symbol: r.results[0].symbol, regularMarketPrice: r.results[0].regularMarketPrice }));
-        
-        localStorage.setItem(cacheKey, JSON.stringify(prices));
-        localStorage.setItem(cacheTimeKey, String(now));
-        return prices;
-      } catch (err) {
-        console.error('Erro ao buscar preços:', err);
-        return [];
-      }
-    }
-
-    // 📍 Função fetchData
     async function fetchData(force = false) {
       if (force) localStorage.removeItem(cacheKey);
       
@@ -240,12 +400,12 @@ loadFundamentals().then(() => {
       renderSkeleton();
 
       const prices = await fetchPrices();
-      const valid = FUNDS.map(ticker => {
+      currentPrices = FUNDS.map(ticker => {
         const price = prices.find(p => p.symbol === ticker);
         return price ? { ...price } : { symbol: ticker, regularMarketPrice: null };
       });
 
-      renderData(valid);
+      renderData(currentPrices);
       const lastFundUpdate = Object.values(FUNDAMENTALS)[0]?.updated || 'n/a';
       lastUpdateEl.textContent = `Preço: ${new Date().toLocaleTimeString('pt-BR')} | Fund: ${lastFundUpdate}`;
       
@@ -253,18 +413,29 @@ loadFundamentals().then(() => {
       refreshBtn.textContent = 'Atualizar';
     }
 
-    // 📍 Função renderData
     function renderData(data) {
       grid.innerHTML = data.map(createCard).join('');
     }
 
-    // 📍 Event listener do botão
-    refreshBtn.addEventListener('click', () => fetchData(true));
+    function showFundamentalsDate() {
+      const firstFund = Object.values(FUNDAMENTALS)[0];
+      if (firstFund && firstFund.updated) {
+        const [year, month, day] = firstFund.updated.split('-');
+        document.getElementById('fund-date-text').textContent = `${day}/${month}/${year}`;
+        document.getElementById('fundamentals-badge').style.display = 'inline-block';
+      }
+    }
 
-    // 📍 Inicialização do app (POR ÚLTIMO)
-    loadFundamentals().then(() => {
-      fetchData();
+    // 🚀 Inicialização
+    refreshBtn.addEventListener('click', () => fetchData(true));
+    document.getElementById('login-submit').addEventListener('click', handleLogin);
+    
+    setupAuthListener();
+    
+    // Carrega dados do Firestore primeiro, depois busca preços
+    loadFundamentalsFromFirestore().then(() => {
       showFundamentalsDate();
+      fetchData();
     });
   </script>
 

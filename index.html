@@ -210,6 +210,15 @@
     const FUNDS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11', 'MXRF11'];
     const BASE_URL = 'https://brapi.dev/api/quote';
     
+    // URLs oficiais dos fundos
+    const FUND_LINKS = {
+      'JURO11': { site: 'https://www.sparta.com.br/sparta-fi-infra/', nome: 'Sparta RI' },
+      'DIVS11': { site: 'https://www.sparta.com.br/divs11/', nome: 'Sparta RI' },
+      'CRAA11': { site: 'https://www.sparta.com.br/craa11/', nome: 'Sparta RI' },
+      'CDII11': { site: 'https://www.sparta.com.br/sparta-cdii11/', nome: 'Sparta RI' },
+      'MXRF11': { site: 'https://www.xpasset.com.br/fundos/maxi-renda/', nome: 'XP Asset' }
+    };
+    
     /* [SEÇÃO 14] Dados Fundamentais (Fallback) */
     let FUNDAMENTALS = {
       "JURO11": { "pvp": 0.95, "pffo": 8.5, "dy": 11.69, "updated": "2026-06-19" },
@@ -393,9 +402,9 @@
       const { symbol, regularMarketPrice } = priceData;
       const fund = FUNDAMENTALS[symbol] || {};
       
-      // Links corrigidos
+      // Links: Google Finance + Site oficial do fundo
       const googleUrl = `https://www.google.com/finance/quote/${symbol}:BVMF`;
-      const investidor10Url = `https://investidor10.com.br/fii/${symbol.toLowerCase()}/`;
+      const fundLink = FUND_LINKS[symbol] || { site: googleUrl, nome: 'Google Finance' };
       
       // Calcular Cota Patrimonial
       const cotaPatrimonial = (fund.pvp && regularMarketPrice) 
@@ -437,7 +446,7 @@
           </div>
           <div class="links">
             <a href="${googleUrl}" target="_blank" class="link">Google Finance</a>
-            <a href="${investidor10Url}" target="_blank" class="link">Investidor10</a>
+            <a href="${fundLink.site}" target="_blank" class="link">${fundLink.nome}</a>
           </div>
           <div class="note">📊 Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}. P/FFO é o padrão institucional para FIIs.</div>
         </div>

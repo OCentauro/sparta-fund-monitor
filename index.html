@@ -85,7 +85,7 @@
     /* [SEÇÃO 10] Formulário de Edição */
     .edit-header {
       display: grid;
-      grid-template-columns: 1.2fr 1fr 1fr 1fr;
+      grid-template-columns: 0.8fr 1fr 1fr 1fr 1.2fr; /* 5 colunas */
       gap: 8px;
       padding: 8px 12px;
       font-weight: 600;
@@ -98,7 +98,7 @@
     }
     .edit-row {
       display: grid;
-      grid-template-columns: 1.2fr 1fr 1fr 1fr;
+      grid-template-columns: 0.8fr 1fr 1fr 1fr 1.2fr; /* 5 colunas */
       gap: 8px;
       padding: 10px 12px;
       align-items: center;
@@ -125,6 +125,17 @@
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
     }
     .edit-row input::placeholder { color: var(--muted); opacity: 0.6; }
+    
+    /* Ajuste responsivo para 5 colunas */
+    @media (max-width: 480px) { 
+      .edit-header, .edit-row {
+        grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+        gap: 4px;
+        padding: 8px 6px;
+      }
+      .edit-row .ticker-label { font-size: 0.8rem; }
+      .edit-row input { padding: 6px 4px; font-size: 0.85rem; }
+    }
 
     /* [SEÇÃO 10.5] Guia de Indicadores */
     .guide-section {
@@ -386,44 +397,11 @@
     
     /* [SEÇÃO 14] Dados Fundamentais (Fallback) */
     let FUNDAMENTALS = {
-      "JURO11": { 
-        "categoria": "fi-infra-cdi",
-        "vp": 101.32, 
-        "pffo": 8.5, 
-        "dy": 11.69, 
-        "yieldCdi": 112,
-        "updated": "2026-06-19" 
-      },
-      "DIVS11": { 
-        "categoria": "fi-infra-ipca",
-        "vp": 9.50, 
-        "pffo": 10.2, 
-        "dy": 13.00, 
-        "carrego": 7.5,
-        "updated": "2026-06-19" 
-      },
-      "CRAA11": { 
-        "categoria": "fiagro",
-        "vp": 8.90, 
-        "pffo": 9.7, 
-        "dy": 14.95, 
-        "updated": "2026-06-19" 
-      },
-      "CDII11": { 
-        "categoria": "fi-infra-cdi",
-        "vp": 9.20, 
-        "pffo": 9.9, 
-        "dy": 17.09, 
-        "yieldCdi": 108,
-        "updated": "2026-06-19" 
-      },
-      "MXRF11": { 
-        "categoria": "papel",
-        "vp": 10.36, 
-        "pffo": 11.5, 
-        "dy": 12.50, 
-        "updated": "2026-06-19" 
-      }
+      "JURO11": { "vp": 101.32, "pffo": 8.5, "dy": 11.69, "benchmark": "IMAB 5 + 2%", "updated": "2026-06-19" },
+      "DIVS11": { "vp": 9.50, "pffo": 10.2, "dy": 13.00, "benchmark": "IDkA IPCA 5A + 2%", "updated": "2026-06-19" },
+      "CRAA11": { "vp": 8.90, "pffo": 9.7, "dy": 14.95, "benchmark": "IPCA+ longo", "updated": "2026-06-19" },
+      "CDII11": { "vp": 9.20, "pffo": 9.9, "dy": 17.09, "benchmark": "CDI", "updated": "2026-06-19" },
+      "MXRF11": { "vp": 10.36, "pffo": 11.5, "dy": 12.50, "benchmark": "CDI", "updated": "2026-06-19" }
     };
 
     /* [SEÇÃO 15] Elementos do DOM */
@@ -476,34 +454,22 @@
           const vpElement = document.getElementById(`vp-${ticker}`);
           const pffoElement = document.getElementById(`pffo-${ticker}`);
           const dyElement = document.getElementById(`dy-${ticker}`);
+          const benchmarkElement = document.getElementById(`benchmark-${ticker}`);
           
           const vp = vpElement ? parseFloat(vpElement.value) : null;
           const pffo = pffoElement ? parseFloat(pffoElement.value) : null;
           const dy = dyElement ? parseFloat(dyElement.value) : null;
+          const benchmark = benchmarkElement ? benchmarkElement.value : '';
           
-          const docData = {
+          const docRef = db.collection('fundamentals').doc(ticker);
+          batch.set(docRef, {
             vp: isNaN(vp) ? null : vp,
             pffo: isNaN(pffo) ? null : pffo,
             dy: isNaN(dy) ? null : dy,
+            benchmark: benchmark,
             updated: new Date().toISOString().split('T')[0],
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-          };
-          
-          // Campos condicionais baseados no ticker
-          if (ticker === 'DIVS11') {
-            const carregoElement = document.getElementById(`carrego-${ticker}`);
-            const carrego = carregoElement ? parseFloat(carregoElement.value) : null;
-            docData.carrego = isNaN(carrego) ? null : carrego;
-          }
-          
-          if (ticker === 'JURO11' || ticker === 'CDII11') {
-            const yieldCdiElement = document.getElementById(`yieldCdi-${ticker}`);
-            const yieldCdi = yieldCdiElement ? parseFloat(yieldCdiElement.value) : null;
-            docData.yieldCdi = isNaN(yieldCdi) ? null : yieldCdi;
-          }
-          
-          const docRef = db.collection('fundamentals').doc(ticker);
-          batch.set(docRef, docData);
+          });
         });
         
         await batch.commit();
@@ -581,45 +547,23 @@
       const header = `
         <div class="edit-header">
           <div>Ticker</div>
-          <div>Cota Patrimonial (R$)</div>
+          <div>Cota Pat. (R$)</div>
           <div>P/FFO</div>
           <div>DY %</div>
+          <div>Benchmark</div>
         </div>
       `;
       
       const rows = FUNDS.map(ticker => {
         const fund = FUNDAMENTALS[ticker] || {};
-        
-        // Campos condicionais baseados no ticker (não na categoria)
-        let conditionalFields = '';
-        if (ticker === 'DIVS11') {
-          conditionalFields = `
-            <div class="conditional-field">
-              <label>📊 Carrego (% IPCA+) - Ex: 7.5 para IPCA+7.5%</label>
-              <input type="number" step="0.01" id="carrego-${ticker}" 
-                     placeholder="Ex: 7.5" 
-                     value="${fund.carrego !== undefined && fund.carrego !== null ? fund.carrego : ''}">
-            </div>
-          `;
-        } else if (ticker === 'JURO11' || ticker === 'CDII11') {
-          conditionalFields = `
-            <div class="conditional-field">
-              <label>📊 Yield CDI (%) - Ex: 112 para 112% do CDI</label>
-              <input type="number" step="0.01" id="yieldCdi-${ticker}" 
-                     placeholder="Ex: 112" 
-                     value="${fund.yieldCdi !== undefined && fund.yieldCdi !== null ? fund.yieldCdi : ''}">
-            </div>
-          `;
-        }
-        
         return `
           <div class="edit-row">
             <div class="ticker-label">${ticker}</div>
             <input type="number" step="0.01" id="vp-${ticker}" placeholder="0.00" value="${fund.vp !== undefined && fund.vp !== null ? fund.vp : ''}">
             <input type="number" step="0.01" id="pffo-${ticker}" placeholder="0.00" value="${fund.pffo !== undefined && fund.pffo !== null ? fund.pffo : ''}">
             <input type="number" step="0.01" id="dy-${ticker}" placeholder="0.00" value="${fund.dy !== undefined && fund.dy !== null ? fund.dy : ''}">
+            <input type="text" id="benchmark-${ticker}" placeholder="Ex: CDI" value="${fund.benchmark || ''}">
           </div>
-          ${conditionalFields}
         `;
       }).join('');
       
@@ -791,7 +735,7 @@
       return Number(val).toFixed(decimals) + suffix;
     }
 
-    /* [SEÇÃO 21] Criar Card - COM CLASSIFICAÇÃO */
+    /* [SEÇÃO 21] Criar Card - COM MELHORIAS */
     function createCard(priceData) {
       const { symbol, regularMarketPrice } = priceData;
       const fund = FUNDAMENTALS[symbol] || {};
@@ -811,14 +755,11 @@
         if (pvp < 1) pvpClass = 'pvp-discount';
         else if (pvp > 1) pvpClass = 'pvp-premium';
       }
-      
-      // Classificação do ativo (nova funcionalidade)
-      const classification = classifyFund(symbol, priceData);
-      
+
       // Lembrete específico para o MXRF11
       let mxrfNote = '';
       if (symbol === 'MXRF11') {
-        mxrfNote = `<div class="note mxrf-note">📁 <b>Fonte do VP:</b> Documentos > Planilha de Fundamentos ou Informe Mensal no site da XP Asset.</div>`;
+        mxrfNote = `<div class="note mxrf-note"> <b>Fonte do VP:</b> Documentos > Planilha de Fundamentos ou Informe Mensal no site da XP Asset.</div>`;
       }
 
       return `
@@ -847,15 +788,12 @@
               <span class="value">R$ ${fund.vp ? formatNumber(fund.vp) : '-'}</span>
             </div>
           </div>
-          <div class="classification ${classification.class}">
-            ${classification.status}
-            ${classification.line ? `<span class="classification-line">${classification.line}</span>` : ''}
-          </div>
           <div class="links">
             <a href="${googleUrl}" target="_blank" class="link">Google Finance</a>
             <a href="${fundLink.site}" target="_blank" class="link">${fundLink.nome}</a>
           </div>
-          <div class="note">📊 Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}</div>
+          <div class="note"> Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}. P/FFO é o padrão institucional para FIIs.</div>
+          ${fund.benchmark ? `<div class="note">🎯 <b>Benchmark:</b> ${fund.benchmark}</div>` : ''}
           ${mxrfNote}
         </div>
       `;

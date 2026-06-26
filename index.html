@@ -125,6 +125,40 @@
       box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
     }
     .edit-row input::placeholder { color: var(--muted); opacity: 0.6; }
+
+    /* [SEÇÃO 10.5] Guia de Indicadores */
+    .guide-section {
+      max-width: 1200px;
+      margin: 40px auto 20px;
+      padding: 20px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+    }
+    .guide-section h3 {
+      font-size: 1.1rem;
+      margin-bottom: 16px;
+      color: var(--text);
+    }
+    .guide-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 16px;
+    }
+    .guide-item {
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .guide-item b {
+      color: var(--text);
+    }
+    .mxrf-note {
+      color: var(--warning) !important;
+      margin-top: 8px !important;
+      padding-top: 8px;
+      border-top: 1px dashed var(--border);
+    }
     
     /* [SEÇÃO 11] Responsivo */
     @media (max-width: 480px) { 
@@ -157,6 +191,18 @@
   </header>
 
   <main id="grid" class="grid"></main>
+
+  <!-- Guia de Indicadores -->
+  <section class="guide-section">
+    <h3>📖 Guia de Indicadores</h3>
+    <div class="guide-grid">
+      <div class="guide-item"><b>Preço:</b> Cotação atual de mercado em tempo real.</div>
+      <div class="guide-item"><b>P/VP:</b> Preço sobre Valor Patrimonial. <span style="color:var(--success)">Menor que 1 (Desconto)</span> | <span style="color:var(--danger)">Maior que 1 (Prêmio)</span>.</div>
+      <div class="guide-item"><b>P/FFO:</b> Preço sobre Fundo de Funds Operations. Quanto menor, mais barato o fundo está em relação à sua geração de caixa recorrente.</div>
+      <div class="guide-item"><b>DY:</b> Dividend Yield. Percentual de dividendos pagos nos últimos 12 meses em relação ao preço atual.</div>
+      <div class="guide-item"><b>Cota Patrimonial (VP):</b> Valor contábil da cota. Dado oficial divulgado pela administradora nos informes mensais.</div>
+    </div>
+  </section>
 
   <!-- Modal de Login -->
   <div id="login-modal" class="modal">
@@ -422,6 +468,12 @@
         else if (pvp > 1) pvpClass = 'pvp-premium';
       }
 
+      // Lembrete específico para o MXRF11
+      let mxrfNote = '';
+      if (symbol === 'MXRF11') {
+        mxrfNote = `<div class="note mxrf-note">📁 <b>Fonte do VP:</b> Documentos > Planilha de Fundamentos ou Informe Mensal no site da XP Asset.</div>`;
+      }
+
       return `
         <div class="card">
           <div class="ticker">${symbol}</div>
@@ -452,7 +504,8 @@
             <a href="${googleUrl}" target="_blank" class="link">Google Finance</a>
             <a href="${fundLink.site}" target="_blank" class="link">${fundLink.nome}</a>
           </div>
-          <div class="note">📊 Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}. P/FFO é o padrão institucional para FIIs.</div>
+          <div class="note"> Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}. P/FFO é o padrão institucional para FIIs.</div>
+          ${mxrfNote}
         </div>
       `;
     }
@@ -514,10 +567,16 @@
         return price ? { ...price } : { symbol: ticker, regularMarketPrice: null };
       });
 
-      // Ordenar por P/VP (menor para maior)
+      // Ordenar por P/VP calculado (menor para maior)
       currentPrices.sort((a, b) => {
-        const pvpA = FUNDAMENTALS[a.symbol]?.pvp || 999;
-        const pvpB = FUNDAMENTALS[b.symbol]?.pvp || 999;
+        const vpA = FUNDAMENTALS[a.symbol]?.vp;
+        const vpB = FUNDAMENTALS[b.symbol]?.vp;
+        const priceA = a.regularMarketPrice;
+        const priceB = b.regularMarketPrice;
+        
+        const pvpA = (vpA && priceA) ? (priceA / vpA) : 999;
+        const pvpB = (vpB && priceB) ? (priceB / vpB) : 999;
+        
         return pvpA - pvpB;
       });
 

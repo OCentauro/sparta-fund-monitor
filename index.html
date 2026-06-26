@@ -364,7 +364,7 @@
       const header = `
         <div class="edit-header">
           <div>Ticker</div>
-          <div>P/VP</div>
+          <div>Cota Patrimonial (R$)</div>
           <div>P/FFO</div>
           <div>DY %</div>
         </div>
@@ -375,7 +375,7 @@
         return `
           <div class="edit-row">
             <div class="ticker-label">${ticker}</div>
-            <input type="number" step="0.01" id="pvp-${ticker}" placeholder="0.00" value="${fund.pvp !== undefined && fund.pvp !== null ? fund.pvp : ''}">
+            <input type="number" step="0.01" id="vp-${ticker}" placeholder="0.00" value="${fund.vp !== undefined && fund.vp !== null ? fund.vp : ''}">
             <input type="number" step="0.01" id="pffo-${ticker}" placeholder="0.00" value="${fund.pffo !== undefined && fund.pffo !== null ? fund.pffo : ''}">
             <input type="number" step="0.01" id="dy-${ticker}" placeholder="0.00" value="${fund.dy !== undefined && fund.dy !== null ? fund.dy : ''}">
           </div>

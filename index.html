@@ -275,13 +275,17 @@
         const batch = db.batch();
         
         FUNDS.forEach(ticker => {
-          const pvp = parseFloat(document.getElementById(`pvp-${ticker}`).value);
-          const pffo = parseFloat(document.getElementById(`pffo-${ticker}`).value);
-          const dy = parseFloat(document.getElementById(`dy-${ticker}`).value);
+          const vpElement = document.getElementById(`vp-${ticker}`);
+          const pffoElement = document.getElementById(`pffo-${ticker}`);
+          const dyElement = document.getElementById(`dy-${ticker}`);
+          
+          const vp = vpElement ? parseFloat(vpElement.value) : null;
+          const pffo = pffoElement ? parseFloat(pffoElement.value) : null;
+          const dy = dyElement ? parseFloat(dyElement.value) : null;
           
           const docRef = db.collection('fundamentals').doc(ticker);
           batch.set(docRef, {
-            pvp: isNaN(pvp) ? null : pvp,
+            vp: isNaN(vp) ? null : vp,
             pffo: isNaN(pffo) ? null : pffo,
             dy: isNaN(dy) ? null : dy,
             updated: new Date().toISOString().split('T')[0],
@@ -431,7 +435,14 @@
               <span class="label">P/VP</span>
               <span class="value">${formatNumber(pvp)}</span>
             </div>
-            ...
+            <div class="metric">
+              <span class="label">P/FFO</span>
+              <span class="value">${formatNumber(fund.pffo)}</span>
+            </div>
+            <div class="metric">
+              <span class="label">DY</span>
+              <span class="value">${formatNumber(fund.dy, 2)}%</span>
+            </div>
             <div class="metric" style="grid-column: span 2;">
               <span class="label">Cota Patrimonial</span>
               <span class="value">R$ ${fund.vp ? formatNumber(fund.vp) : '-'}</span>

@@ -159,7 +159,113 @@
       padding-top: 8px;
       border-top: 1px dashed var(--border);
     }
+
+    /* [SEÇÃO 10.6] Painel de Taxas Macro */
+    .macro-panel {
+      max-width: 1200px;
+      margin: 0 auto 20px;
+      padding: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+    .macro-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .macro-item label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      font-weight: 600;
+    }
+    .macro-item input {
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 0.95rem;
+      font-weight: 600;
+      text-align: center;
+    }
+    .macro-item input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .macro-item .auto-tag {
+      font-size: 0.7rem;
+      color: var(--success);
+      font-weight: 500;
+    }
     
+    /* [SEÇÃO 10.7] Status de Classificação nos Cards */
+    .classification {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      text-align: center;
+      border: 1px solid;
+    }
+    .classification.status-atractivo {
+      background: rgba(16, 185, 129, 0.1);
+      color: var(--success);
+      border-color: var(--success);
+    }
+    .classification.status-alerta {
+      background: rgba(239, 68, 68, 0.1);
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+    .classification.status-neutro {
+      background: rgba(100, 116, 139, 0.1);
+      color: var(--muted);
+      border-color: var(--border);
+    }
+    .classification.status-premio {
+      background: rgba(37, 99, 235, 0.1);
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .classification-line {
+      display: block;
+      margin-top: 4px;
+      font-size: 0.7rem;
+      font-weight: 500;
+      opacity: 0.85;
+    }
+    
+    /* [SEÇÃO 10.8] Campos Condicionais no Formulário */
+    .conditional-field {
+      margin-top: 8px;
+      padding: 8px;
+      background: rgba(37, 99, 235, 0.05);
+      border-radius: 6px;
+      border-left: 3px solid var(--accent);
+    }
+    .conditional-field label {
+      font-size: 0.75rem;
+      color: var(--accent);
+      font-weight: 600;
+      display: block;
+      margin-bottom: 4px;
+    }
+    .conditional-field input {
+      width: 100%;
+      padding: 6px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 0.85rem;
+    }
+
     /* [SEÇÃO 11] Responsivo */
     @media (max-width: 480px) { 
       header { flex-direction: column; align-items: flex-start; } 
@@ -189,6 +295,19 @@
       </div>
     </div>
   </header>
+
+  <!-- Painel de Taxas Macro -->
+  <section class="macro-panel">
+    <div class="macro-item">
+      <label>Taxa CDI <span class="auto-tag">🔄 Auto</span></label>
+      <input type="number" step="0.01" id="taxa-cdi" placeholder="Carregando...">
+    </div>
+    <div class="macro-item">
+      <label>Tesouro IPCA+ Longo <span class="auto-tag">✏️ Manual</span></label>
+      <input type="number" step="0.01" id="taxa-ipca" placeholder="Ex: 6.15">
+    </div>
+    <button id="save-macro-btn" class="secondary" style="align-self: end;">Salvar Taxas</button>
+  </section>
 
   <main id="grid" class="grid"></main>
 
@@ -267,11 +386,44 @@
     
     /* [SEÇÃO 14] Dados Fundamentais (Fallback) */
     let FUNDAMENTALS = {
-      "JURO11": { "vp": 101.32, "pffo": 8.5, "dy": 11.69, "updated": "2026-06-19" },
-      "DIVS11": { "vp": 9.50, "pffo": 10.2, "dy": 13.00, "updated": "2026-06-19" },
-      "CRAA11": { "vp": 8.90, "pffo": 9.7, "dy": 14.95, "updated": "2026-06-19" },
-      "CDII11": { "vp": 9.20, "pffo": 9.9, "dy": 17.09, "updated": "2026-06-19" },
-      "MXRF11": { "vp": 10.36, "pffo": 11.5, "dy": 12.50, "updated": "2026-06-19" }
+      "JURO11": { 
+        "categoria": "fi-infra-cdi",
+        "vp": 101.32, 
+        "pffo": 8.5, 
+        "dy": 11.69, 
+        "yieldCdi": 112,
+        "updated": "2026-06-19" 
+      },
+      "DIVS11": { 
+        "categoria": "fi-infra-ipca",
+        "vp": 9.50, 
+        "pffo": 10.2, 
+        "dy": 13.00, 
+        "carrego": 7.5,
+        "updated": "2026-06-19" 
+      },
+      "CRAA11": { 
+        "categoria": "fiagro",
+        "vp": 8.90, 
+        "pffo": 9.7, 
+        "dy": 14.95, 
+        "updated": "2026-06-19" 
+      },
+      "CDII11": { 
+        "categoria": "fi-infra-cdi",
+        "vp": 9.20, 
+        "pffo": 9.9, 
+        "dy": 17.09, 
+        "yieldCdi": 108,
+        "updated": "2026-06-19" 
+      },
+      "MXRF11": { 
+        "categoria": "papel",
+        "vp": 10.36, 
+        "pffo": 11.5, 
+        "dy": 12.50, 
+        "updated": "2026-06-19" 
+      }
     };
 
     /* [SEÇÃO 15] Elementos do DOM */
@@ -321,6 +473,9 @@
         const batch = db.batch();
         
         FUNDS.forEach(ticker => {
+          const fund = FUNDAMENTALS[ticker] || {};
+          const categoria = fund.categoria || 'papel';
+          
           const vpElement = document.getElementById(`vp-${ticker}`);
           const pffoElement = document.getElementById(`pffo-${ticker}`);
           const dyElement = document.getElementById(`dy-${ticker}`);
@@ -329,14 +484,30 @@
           const pffo = pffoElement ? parseFloat(pffoElement.value) : null;
           const dy = dyElement ? parseFloat(dyElement.value) : null;
           
-          const docRef = db.collection('fundamentals').doc(ticker);
-          batch.set(docRef, {
+          const docData = {
+            categoria: categoria,
             vp: isNaN(vp) ? null : vp,
             pffo: isNaN(pffo) ? null : pffo,
             dy: isNaN(dy) ? null : dy,
             updated: new Date().toISOString().split('T')[0],
             updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-          });
+          };
+          
+          // Campos condicionais para FI-Infra
+          if (categoria === 'fi-infra-ipca') {
+            const carregoElement = document.getElementById(`carrego-${ticker}`);
+            const carrego = carregoElement ? parseFloat(carregoElement.value) : null;
+            docData.carrego = isNaN(carrego) ? null : carrego;
+          }
+          
+          if (categoria === 'fi-infra-cdi') {
+            const yieldCdiElement = document.getElementById(`yieldCdi-${ticker}`);
+            const yieldCdi = yieldCdiElement ? parseFloat(yieldCdiElement.value) : null;
+            docData.yieldCdi = isNaN(yieldCdi) ? null : yieldCdi;
+          }
+          
+          const docRef = db.collection('fundamentals').doc(ticker);
+          batch.set(docRef, docData);
         });
         
         await batch.commit();
@@ -422,13 +593,38 @@
       
       const rows = FUNDS.map(ticker => {
         const fund = FUNDAMENTALS[ticker] || {};
+        const categoria = fund.categoria || 'papel';
+        
+        // Campos condicionais para FI-Infra
+        let conditionalFields = '';
+        if (categoria === 'fi-infra-ipca') {
+          conditionalFields = `
+            <div class="conditional-field">
+              <label>📊 Carrego (% IPCA+) - Ex: 7.5 para IPCA+7.5%</label>
+              <input type="number" step="0.01" id="carrego-${ticker}" 
+                     placeholder="Ex: 7.5" 
+                     value="${fund.carrego !== undefined && fund.carrego !== null ? fund.carrego : ''}">
+            </div>
+          `;
+        } else if (categoria === 'fi-infra-cdi') {
+          conditionalFields = `
+            <div class="conditional-field">
+              <label>📊 Yield CDI (%) - Ex: 112 para 112% do CDI</label>
+              <input type="number" step="0.01" id="yieldCdi-${ticker}" 
+                     placeholder="Ex: 112" 
+                     value="${fund.yieldCdi !== undefined && fund.yieldCdi !== null ? fund.yieldCdi : ''}">
+            </div>
+          `;
+        }
+        
         return `
           <div class="edit-row">
-            <div class="ticker-label">${ticker}</div>
+            <div class="ticker-label">${ticker} <span style="font-size:0.7rem;color:var(--muted);">(${categoria})</span></div>
             <input type="number" step="0.01" id="vp-${ticker}" placeholder="0.00" value="${fund.vp !== undefined && fund.vp !== null ? fund.vp : ''}">
             <input type="number" step="0.01" id="pffo-${ticker}" placeholder="0.00" value="${fund.pffo !== undefined && fund.pffo !== null ? fund.pffo : ''}">
             <input type="number" step="0.01" id="dy-${ticker}" placeholder="0.00" value="${fund.dy !== undefined && fund.dy !== null ? fund.dy : ''}">
           </div>
+          ${conditionalFields}
         `;
       }).join('');
       
@@ -441,13 +637,171 @@
       document.getElementById('edit-modal').classList.remove('active');
     }
 
+    /* [SEÇÃO 19.5] Regras de Negócio - Classificação de Ativos */
+    
+    // Classifica FII de Tijolo (Regra 1)
+    function classifyTijolo(pffo, taxaIpca) {
+      if (!pffo || !taxaIpca) return { status: 'Sem dados', line: '', class: 'status-neutro' };
+      
+      const ffoYield = 1 / pffo;
+      let status = '';
+      let line = '';
+      let cssClass = 'status-neutro';
+      
+      if (pffo < 6) {
+        status = '⚠️ ALERTA: Possível Armadilha de Valor';
+        cssClass = 'status-alerta';
+      } else if (pffo >= 6 && pffo <= 10) {
+        status = '✅ Muito Atrativo';
+        cssClass = 'status-atractivo';
+      } else {
+        status = 'ℹ️ P/FFO Fora da Faixa Ideal';
+        cssClass = 'status-neutro';
+      }
+      
+      if (ffoYield > (taxaIpca + 0.02)) {
+        line = '💰 Prêmio de Risco Válido frente aos Juros';
+      } else {
+        line = '⚠️ Prêmio de Risco Insuficiente';
+      }
+      
+      return { status, line, class: cssClass };
+    }
+    
+    // Classifica FII de Papel e FIAGRO (Regra 2)
+    function classifyPapelFiagro(pvp) {
+      if (pvp === null || pvp === undefined) return { status: 'Sem dados', line: '', class: 'status-neutro' };
+      
+      if (pvp < 0.85) {
+        return { 
+          status: '⚠️ ALERTA: Alto Risco de Inadimplência', 
+          line: 'Possível calote na carteira',
+          class: 'status-alerta' 
+        };
+      } else if (pvp >= 0.93 && pvp <= 0.99) {
+        return { 
+          status: '✅ Com Desconto / Oportunidade', 
+          line: 'Faixa atrativa de compra',
+          class: 'status-atractivo' 
+        };
+      } else if (pvp > 1.00 && pvp <= 1.02) {
+        return { 
+          status: '💵 Preço Justo com Leve Ágio', 
+          line: 'Valor justo de mercado',
+          class: 'status-premio' 
+        };
+      } else if (pvp > 1.02) {
+        return { 
+          status: '💸 Caro / Ágio Elevado', 
+          line: 'Deságio recomendado',
+          class: 'status-alerta' 
+        };
+      } else {
+        return { 
+          status: 'ℹ️ Faixa Intermediária', 
+          line: 'Aguardar melhor ponto de entrada',
+          class: 'status-neutro' 
+        };
+      }
+    }
+    
+    // Classifica FII Híbrido (Regra 3)
+    function classifyHibrido(pvp, dy, taxaCdi) {
+      if (!pvp || !dy || !taxaCdi) return { status: 'Sem dados', line: '', class: 'status-neutro' };
+      
+      const dyDecimal = dy / 100;
+      const cdiDecimal = taxaCdi / 100;
+      
+      if (pvp <= 1.02 && dyDecimal > cdiDecimal) {
+        return { 
+          status: '✅ Eficiente: Preço Controlado + Retorno > CDI', 
+          line: `DY ${(dy).toFixed(2)}% > CDI ${(taxaCdi).toFixed(2)}%`,
+          class: 'status-atractivo' 
+        };
+      } else {
+        return { 
+          status: '❌ Inadequado ou Fora do Preço', 
+          line: `P/VP ${pvp.toFixed(2)} ou DY ${(dy).toFixed(2)}% insuficiente`,
+          class: 'status-alerta' 
+        };
+      }
+    }
+    
+    // Classifica FI-Infra IPCA+ (Regra 4)
+    function classifyFiInfraIpca(carrego, taxaIpca) {
+      if (!carrego || !taxaIpca) return { status: 'Sem dados', line: '', class: 'status-neutro' };
+      
+      const spread = carrego - taxaIpca;
+      
+      if (spread >= 1.5) {
+        return { 
+          status: '✅ Altamente Atrativo (Prêmio Robusto)', 
+          line: `Spread IPCA+${spread.toFixed(2)}% vs Tesouro IPCA+${taxaIpca.toFixed(2)}%`,
+          class: 'status-atractivo' 
+        };
+      } else {
+        return { 
+          status: '⚠️ Margem Estrita frente ao Título Público', 
+          line: `Spread IPCA+${spread.toFixed(2)}% < IPCA+1.50%`,
+          class: 'status-alerta' 
+        };
+      }
+    }
+    
+    // Classifica FI-Infra CDI (Regra 5)
+    function classifyFiInfraCdi(yieldCdi) {
+      if (!yieldCdi) return { status: 'Sem dados', line: '', class: 'status-neutro' };
+      
+      if (yieldCdi >= 110) {
+        return { 
+          status: '✅ Excelente Geração de Caixa Isenta', 
+          line: `${yieldCdi}% do CDI - Acima do benchmark`,
+          class: 'status-atractivo' 
+        };
+      } else {
+        return { 
+          status: 'ℹ️ Retorno Dentro da Média de Mercado', 
+          line: `${yieldCdi}% do CDI - Na média`,
+          class: 'status-neutro' 
+        };
+      }
+    }
+    
+    // Função principal que escolhe a regra certa
+    function classifyFund(ticker, priceData) {
+      const fund = FUNDAMENTALS[ticker] || {};
+      const categoria = fund.categoria || 'papel';
+      const pvp = (fund.vp && priceData.regularMarketPrice) 
+        ? (priceData.regularMarketPrice / fund.vp) 
+        : null;
+      
+      const taxaCdi = parseFloat(document.getElementById('taxa-cdi')?.value) || null;
+      const taxaIpca = parseFloat(document.getElementById('taxa-ipca')?.value) || null;
+      
+      switch (categoria) {
+        case 'tijolo':
+          return classifyTijolo(fund.pffo, taxaIpca);
+        case 'papel':
+        case 'fiagro':
+          return classifyPapelFiagro(pvp);
+        case 'hibrido':
+          return classifyHibrido(pvp, fund.dy, taxaCdi);
+        case 'fi-infra-ipca':
+          return classifyFiInfraIpca(fund.carrego, taxaIpca);
+        case 'fi-infra-cdi':
+          return classifyFiInfraCdi(fund.yieldCdi);
+        default:
+          return { status: 'Categoria não definida', line: '', class: 'status-neutro' };
+      }
+    }
+
     /* [SEÇÃO 20] Funções Auxiliares */
     function formatNumber(val, decimals = 2, suffix = '') {
       if (val === null || val === undefined || isNaN(val)) return '-';
       return Number(val).toFixed(decimals) + suffix;
     }
 
-    /* [SEÇÃO 21] Criar Card - COM MELHORIAS */
+    /* [SEÇÃO 21] Criar Card - COM CLASSIFICAÇÃO */
     function createCard(priceData) {
       const { symbol, regularMarketPrice } = priceData;
       const fund = FUNDAMENTALS[symbol] || {};
@@ -467,7 +821,10 @@
         if (pvp < 1) pvpClass = 'pvp-discount';
         else if (pvp > 1) pvpClass = 'pvp-premium';
       }
-
+      
+      // Classificação do ativo (nova funcionalidade)
+      const classification = classifyFund(symbol, priceData);
+      
       // Lembrete específico para o MXRF11
       let mxrfNote = '';
       if (symbol === 'MXRF11') {
@@ -500,11 +857,15 @@
               <span class="value">R$ ${fund.vp ? formatNumber(fund.vp) : '-'}</span>
             </div>
           </div>
+          <div class="classification ${classification.class}">
+            ${classification.status}
+            ${classification.line ? `<span class="classification-line">${classification.line}</span>` : ''}
+          </div>
           <div class="links">
             <a href="${googleUrl}" target="_blank" class="link">Google Finance</a>
             <a href="${fundLink.site}" target="_blank" class="link">${fundLink.nome}</a>
           </div>
-          <div class="note"> Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}. P/FFO é o padrão institucional para FIIs.</div>
+          <div class="note">📊 Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}</div>
           ${mxrfNote}
         </div>
       `;
@@ -521,6 +882,40 @@
           </div>
         </div>
       `).join('');
+    }
+
+    /* [SEÇÃO 22.5] Buscar Taxas Macro */
+    async function fetchTaxaCdi() {
+      try {
+        // API do Banco Central - Série 4389 (CDI)
+        const response = await fetch('https://api.bcb.gov.br/dados/serie/bcdata.sgs.4389/dados/ultimo?formato=json');
+        const data = await response.json();
+        if (data && data[0] && data[0].valor) {
+          const taxa = parseFloat(data[0].valor.replace(',', '.'));
+          document.getElementById('taxa-cdi').value = taxa.toFixed(2);
+          console.log('✅ Taxa CDI carregada:', taxa);
+        }
+      } catch (err) {
+        console.error('❌ Erro ao buscar CDI:', err);
+        document.getElementById('taxa-cdi').placeholder = 'Erro - digite manualmente';
+      }
+    }
+    
+    function loadMacroFromStorage() {
+      const taxaIpca = localStorage.getItem('taxa_ipca');
+      if (taxaIpca) {
+        document.getElementById('taxa-ipca').value = taxaIpca;
+      } else {
+        document.getElementById('taxa-ipca').placeholder = 'Ex: 6.15';
+      }
+    }
+    
+    function saveMacroToStorage() {
+      const taxaIpca = document.getElementById('taxa-ipca').value;
+      if (taxaIpca) {
+        localStorage.setItem('taxa_ipca', taxaIpca);
+        renderData(currentPrices);
+      }
     }
 
     /* [SEÇÃO 23] Buscar Preços */
@@ -606,30 +1001,18 @@
     /* [SEÇÃO 27] Inicialização */
     refreshBtn.addEventListener('click', () => fetchData(true));
     document.getElementById('login-submit').addEventListener('click', handleLogin);
+    document.getElementById('save-macro-btn').addEventListener('click', saveMacroToStorage);
     
     setupAuthListener();
+    
+    // Carrega taxas macro
+    fetchTaxaCdi();
+    loadMacroFromStorage();
     
     loadFundamentalsFromFirestore().then(() => {
       showFundamentalsDate();
       fetchData();
     });
-  </script>
-
-  <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sparta-fund-monitor/sw.js', {
-          updateViaCache: 'none'
-        })
-          .then(reg => {
-            console.log('✅ SW registrado');
-            setInterval(() => {
-              reg.update();
-            }, 60 * 60 * 1000);
-          })
-          .catch(err => console.log('❌ SW falhou:', err));
-      });
-    }
   </script>
 </body>
 </html>

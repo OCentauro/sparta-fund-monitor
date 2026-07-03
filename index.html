@@ -415,7 +415,11 @@
     /* [SEÇÃO 16] Firebase - Carregar Fundamentos */
     function loadFundamentalsFromFirestore() {
       return new Promise((resolve) => {
+        console.log('🔄 Carregando fundamentos do Firestore...');
+        
         db.collection('fundamentals').get().then(snapshot => {
+          console.log('📊 Snapshot recebido:', snapshot.size, 'documentos');
+          
           if (snapshot.empty) {
             console.log('📭 Nenhum dado no Firestore, usando fallback');
             resolve(false);
@@ -424,6 +428,7 @@
           
           const newData = {};
           snapshot.forEach(doc => {
+            console.log('📄 Documento:', doc.id, doc.data());
             newData[doc.id] = doc.data();
           });
           
@@ -940,17 +945,23 @@
     }
 
     /* [SEÇÃO 27] Inicialização */
+    console.log('🚀 Iniciando aplicação...');
+    
     refreshBtn.addEventListener('click', () => fetchData(true));
     document.getElementById('login-submit').addEventListener('click', handleLogin);
-    document.getElementById('save-macro-btn').addEventListener('click', saveMacroToStorage);
     
     setupAuthListener();
     
-    // Carrega taxas macro
-    fetchTaxaCdi();
-    loadMacroFromStorage();
-    
-    loadFundamentalsFromFirestore().then(() => {
+    // Carrega dados do Firestore primeiro, depois busca preços
+    loadFundamentalsFromFirestore().then((loaded) => {
+      console.log(' Firestore carregado:', loaded);
+      showFundamentalsDate();
+      
+      // Sempre busca os preços, mesmo se o Firestore falhar
+      fetchData();
+    }).catch(err => {
+      console.error('❌ Erro na inicialização:', err);
+      // Mesmo com erro, tenta carregar os dados
       showFundamentalsDate();
       fetchData();
     });

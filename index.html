@@ -320,7 +320,7 @@
       <label>Tesouro IPCA+ Longo <span class="auto-tag">✏️ Manual</span></label>
       <input type="number" step="0.01" id="taxa-ipca" placeholder="Ex: 6.15">
     </div>
-    <button id="save-macro-btn" class="secondary" style="align-self: end;">Salvar Taxas</button>
+    <button id="save-macro-btn" onclick="saveMacroToStorage()" style="align-self: end;">Salvar Taxas</button>
   </section>
 
   <main id="grid" class="grid"></main>
@@ -408,6 +408,12 @@
       "MXRF11": { "vp": 10.36, "pffo": 11.5, "dy": 12.50, "benchmark": "CDI", "taxaRef": 10.75, "updated": "2026-06-19" }
     };
 
+    // Dados macroeconômicos (CDI, IPCA+)
+    let MACRO_DATA = {
+      taxaCdi: null,
+      taxaIpca: null
+    };
+
     /* [SEÇÃO 15] Elementos do DOM */
     const grid = document.getElementById('grid');
     const refreshBtn = document.getElementById('refresh-btn');
@@ -446,31 +452,78 @@
       });
     }
 
-    /* [SEÇÃO 17] Firebase - Salvar Fundamentos */
+    /* [SEÇÃO 16.5] Carregar Dados Macro do Firestore */
+    function loadMacroFromFirestore() {
+      return new Promise((resolve) => {
+        console.log('🔄 Carregando dados macro do Firestore...');
+        
+        db.collection('config').doc('macro').get().then(doc => {
+          if (doc.exists) {
+            const data = doc.data();
+            MACRO_DATA.taxaCdi = data.taxaCdi || null;
+            MACRO_DATA.taxaIpca = data.taxaIpca || null;
+            console.log('✅ Dados macro carregados:', MACRO_DATA);
+            
+            // Preenche os campos na tela
+            const cdiInput = document.getElementById('taxa-cdi');
+            const ipcaInput = document.getElementById('taxa-ipca');
+            if (cdiInput && MACRO_DATA.taxaCdi) cdiInput.value = MACRO_DATA.taxaCdi;
+            if (ipcaInput && MACRO_DATA.taxaIpca) ipcaInput.value = MACRO_DATA.taxaIpca;
+            
+            resolve(true);
+          } else {
+            console.log('📭 Nenhum dado macro no Firestore');
+            resolve(false);
+          }
+        }).catch(err => {
+          console.error('❌ Erro ao carregar dados macro:', err);
+          resolve(false);
+        });
+      });
+    }
+
+    /* [SEÇÃO 17] Firebase - Salvar Fundamentos (COM DEBUG) */
     async function saveFundamentals() {
       const saveBtn = document.getElementById('save-btn');
       const statusEl = document.getElementById('edit-status');
       
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Salvando...';
-      statusEl.textContent = '';
-      statusEl.style.color = '';
+      console.log('🔴 INICIANDO SALVAMENTO...');
+      
+      if (saveBtn) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Salvando...';
+      }
+      if (statusEl) {
+        statusEl.textContent = 'Processando...';
+        statusEl.style.color = 'var(--muted)';
+      }
       
       try {
         const batch = db.batch();
         
         FUNDS.forEach(ticker => {
-          const vpElement = document.getElementById(`vp-${ticker}`);
-          const pffoElement = document.getElementById(`pffo-${ticker}`);
-          const dyElement = document.getElementById(`dy-${ticker}`);
-          const benchmarkElement = document.getElementById(`benchmark-${ticker}`);
-          const taxaRefElement = document.getElementById(`taxaRef-${ticker}`);
+          const vpEl = document.getElementById(`vp-${ticker}`);
+          const pffoEl = document.getElementById(`pffo-${ticker}`);
+          const dyEl = document.getElementById(`dy-${ticker}`);
+          const benchEl = document.getElementById(`benchmark-${ticker}`);
+          const taxaEl = document.getElementById(`taxaRef-${ticker}`);
           
-          const vp = vpElement ? parseFloat(vpElement.value) : null;
-          const pffo = pffoElement ? parseFloat(pffoElement.value) : null;
-          const dy = dyElement ? parseFloat(dyElement.value) : null;
-          const benchmark = benchmarkElement ? benchmarkElement.value : '';
-          const taxaRef = taxaRefElement ? parseFloat(taxaRefElement.value) : null;
+          const vp = vpEl ? parseFloat(vpEl.value) : null;
+          const pffo = pffoEl ? parseFloat(pffoEl.value) : null;
+          const dy = dyEl ? parseFloat(dyEl.value) : null;
+          const benchmark = benchEl ? benchEl.value.trim() : '';
+          const taxaRef = taxaEl ? parseFloat(taxaEl.value) : null;
+          
+          // LOG DETALHADO PARA DEBUG
+          console.log(`📊 ${ticker}:`, {
+            vp,
+            pffo,
+            dy,
+            benchmark,
+            taxaRef,
+            taxaElExiste: !!taxaEl,
+            taxaElValue: taxaEl ? taxaEl.value : 'N/A'
+          });
           
           const docRef = db.collection('fundamentals').doc(ticker);
           batch.set(docRef, {
@@ -484,27 +537,34 @@
           });
         });
         
+        console.log('📤 Enviando para Firestore...');
         await batch.commit();
+        console.log('✅ Commit realizado com sucesso!');
         
-        statusEl.textContent = '✅ Dados salvos com sucesso!';
-        statusEl.style.color = 'var(--success)';
-        
-        // Força recarregamento imediato do Firestore
         await loadFundamentalsFromFirestore();
         showFundamentalsDate();
         renderData(currentPrices);
+        
+        if (statusEl) {
+          statusEl.textContent = '✅ Dados salvos com sucesso!';
+          statusEl.style.color = 'var(--success)';
+        }
         
         setTimeout(() => {
           closeEditModal();
         }, 1500);
         
       } catch (err) {
-        console.error('❌ Erro ao salvar:', err);
-        statusEl.textContent = '❌ Erro ao salvar: ' + err.message;
-        statusEl.style.color = 'var(--danger)';
+        console.error('❌ ERRO AO SALVAR:', err);
+        if (statusEl) {
+          statusEl.textContent = '❌ Erro: ' + err.message;
+          statusEl.style.color = 'var(--danger)';
+        }
       } finally {
-        saveBtn.disabled = false;
-        saveBtn.textContent = 'Salvar';
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = 'Salvar';
+        }
       }
     }
 
@@ -852,20 +912,49 @@
       }
     }
     
-    function saveMacroToStorage() {
+    /* [SEÇÃO MACRO] Salvar Taxas Macro no Firestore */
+    async function saveMacroToStorage() {
       const taxaCdi = document.getElementById('taxa-cdi').value;
       const taxaIpca = document.getElementById('taxa-ipca').value;
       
-      if (taxaCdi) localStorage.setItem('taxa_cdi', taxaCdi);
-      if (taxaIpca) localStorage.setItem('taxa_ipca', taxaIpca);
-      
-      renderData(currentPrices);
-      
       const btn = document.getElementById('save-macro-btn');
-      btn.textContent = '✅ Salvo!';
-      setTimeout(() => {
-        btn.textContent = 'Salvar Taxas';
-      }, 1500);
+      const originalText = btn.textContent;
+      
+      btn.disabled = true;
+      btn.textContent = 'Salvando...';
+      
+      try {
+        console.log('💾 Salvando taxas macro no Firestore...');
+        
+        const macroRef = db.collection('config').doc('macro');
+        await macroRef.set({
+          taxaCdi: parseFloat(taxaCdi) || null,
+          taxaIpca: parseFloat(taxaIpca) || null,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        console.log('✅ Taxas macro salvas no Firestore!');
+        
+        // Atualiza a variável global
+        MACRO_DATA.taxaCdi = parseFloat(taxaCdi) || null;
+        MACRO_DATA.taxaIpca = parseFloat(taxaIpca) || null;
+        
+        renderData(currentPrices);
+        
+        btn.textContent = '✅ Salvo!';
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.disabled = false;
+        }, 1500);
+        
+      } catch (err) {
+        console.error('❌ Erro ao salvar taxas macro:', err);
+        btn.textContent = '❌ Erro!';
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.disabled = false;
+        }, 1500);
+      }
     }
 
     /* [SEÇÃO 23] Buscar Preços */
@@ -968,15 +1057,16 @@
     
     setupAuthListener();
     
-    // Carrega dados do Firestore primeiro, depois busca preços
-    loadFundamentalsFromFirestore().then((loaded) => {
-      console.log('🔥 Firestore carregado:', loaded);
+    // Carrega dados do Firestore (fundamentos + macro) e depois busca preços
+    Promise.all([
+      loadFundamentalsFromFirestore(),
+      loadMacroFromFirestore()
+    ]).then(([fundLoaded, macroLoaded]) => {
+      console.log('🔥 Firestore carregado - Fundamentos:', fundLoaded, 'Macro:', macroLoaded);
       showFundamentalsDate();
-      
-      // Busca os preços iniciais (sem forçar o botão a mudar de estado)
-      fetchData(false); 
+      fetchData(false);
     }).catch(err => {
-      console.error(' Erro na inicialização:', err);
+      console.error('❌ Erro na inicialização:', err);
       showFundamentalsDate();
       fetchData(false);
     });

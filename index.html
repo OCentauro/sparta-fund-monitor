@@ -294,7 +294,10 @@
 <body>
   <header>
     <div>
-      <h1>Sparta Fund Monitor</h1>
+      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <h1>Sparta Fund Monitor</h1>
+        <span id="app-version" style="font-size: 0.75rem; color: var(--muted); background: var(--border); padding: 2px 8px; border-radius: 12px; font-weight: 600;">v1.0.0</span>
+      </div>
       <div class="meta">Monitoramento de fundos geridos pela Sparta Asset Management</div>
       <div id="fundamentals-badge">📅 Fundamentos atualizados em: <span id="fund-date-text">...</span></div>
     </div>
@@ -382,6 +385,7 @@
     const db = firebase.firestore();
 
     /* [SEÇÃO 13] Configurações do App */
+    const APP_VERSION = '1.0.0'; // Atualize este número quando fizer mudanças importantes
     const API_KEY = '7EpuGco9ML58FkFmZVyBWY';
     const FUNDS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11', 'MXRF11'];
     const BASE_URL = 'https://brapi.dev/api/quote';
@@ -896,11 +900,14 @@
 
     /* [SEÇÃO 24] Fetch Data - COM ORDENAÇÃO POR P/VP */
     async function fetchData(force = false) {
-      if (force) localStorage.removeItem(cacheKey);
+      if (force) {
+        localStorage.removeItem(cacheKey);
+        // Só muda o estado do botão se for uma atualização manual
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = 'Atualizando...';
+      }
       
-      refreshBtn.disabled = true;
-      refreshBtn.textContent = 'Atualizando...';
-      renderSkeleton();
+      renderSkeleton(); // Mostra os esqueletos enquanto carrega
 
       const prices = await fetchPrices();
       currentPrices = FUNDS.map(ticker => {
@@ -925,8 +932,11 @@
       const lastFundUpdate = Object.values(FUNDAMENTALS)[0]?.updated || 'n/a';
       lastUpdateEl.textContent = `Preço: ${new Date().toLocaleTimeString('pt-BR')} | Fund: ${lastFundUpdate}`;
       
-      refreshBtn.disabled = false;
-      refreshBtn.textContent = 'Atualizar';
+      if (force) {
+        // Restaura o botão apenas se foi uma atualização manual
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = 'Atualizar';
+      }
     }
 
     /* [SEÇÃO 25] Render Data */
@@ -945,7 +955,13 @@
     }
 
     /* [SEÇÃO 27] Inicialização */
-    console.log('🚀 Iniciando aplicação...');
+    console.log('🚀 Iniciando aplicação versão:', APP_VERSION);
+    
+    // Exibe a versão na tela
+    const versionEl = document.getElementById('app-version');
+    if (versionEl) {
+      versionEl.textContent = 'v' + APP_VERSION;
+    }
     
     refreshBtn.addEventListener('click', () => fetchData(true));
     document.getElementById('login-submit').addEventListener('click', handleLogin);
@@ -954,16 +970,15 @@
     
     // Carrega dados do Firestore primeiro, depois busca preços
     loadFundamentalsFromFirestore().then((loaded) => {
-      console.log(' Firestore carregado:', loaded);
+      console.log('🔥 Firestore carregado:', loaded);
       showFundamentalsDate();
       
-      // Sempre busca os preços, mesmo se o Firestore falhar
-      fetchData();
+      // Busca os preços iniciais (sem forçar o botão a mudar de estado)
+      fetchData(false); 
     }).catch(err => {
-      console.error('❌ Erro na inicialização:', err);
-      // Mesmo com erro, tenta carregar os dados
+      console.error(' Erro na inicialização:', err);
       showFundamentalsDate();
-      fetchData();
+      fetchData(false);
     });
   </script>
 </body>

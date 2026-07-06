@@ -574,7 +574,7 @@
     function setupAuthListener() {
       auth.onAuthStateChanged(user => {
         const authArea = document.getElementById('auth-area');
-        const saveMacroBtn = document.getElementById('save-macro-btn');
+        const saveMacroBtn = document.getElementById('save-macro-btn'); // 👇 NOVA LINHA
         
         if (user) {
           authArea.innerHTML = `
@@ -586,16 +586,39 @@
           document.getElementById('edit-btn').addEventListener('click', showEditModal);
           document.getElementById('logout-btn').addEventListener('click', () => auth.signOut());
           
-          // Mostrar botão de salvar taxas quando logado
-          if (saveMacroBtn) saveMacroBtn.style.display = 'block';
+          if (saveMacroBtn) saveMacroBtn.style.display = 'block'; // 👇 NOVA LINHA
         } else {
           authArea.innerHTML = `<button id="login-btn" class="secondary">Login</button>`;
           document.getElementById('login-btn').addEventListener('click', openLoginModal);
           
-          // Esconder botão de salvar taxas quando não logado
-          if (saveMacroBtn) saveMacroBtn.style.display = 'none';
+          if (saveMacroBtn) saveMacroBtn.style.display = 'none'; //  NOVA LINHA
         }
       });
+    }
+
+    function openLoginModal() {
+      document.getElementById('login-modal').classList.add('active');
+      document.getElementById('login-error').style.display = 'none';
+    }
+
+    function closeLoginModal() {
+      document.getElementById('login-modal').classList.remove('active');
+      document.getElementById('login-email').value = '';
+      document.getElementById('login-password').value = '';
+    }
+
+    async function handleLogin() {
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      const errorEl = document.getElementById('login-error');
+      
+      try {
+        await auth.signInWithEmailAndPassword(email, password);
+        closeLoginModal();
+      } catch (err) {
+        errorEl.textContent = '❌ ' + err.message;
+        errorEl.style.display = 'block';
+      }
     }
 
     /* [SEÇÃO 19] Modal de Edição */

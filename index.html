@@ -314,7 +314,7 @@
   <section class="macro-panel">
     <div class="macro-item">
       <label>Taxa CDI <span class="auto-tag">🔄 Auto</span></label>
-      <input type="number" step="0.01" id="taxa-cdi" placeholder="Carregando...">
+      <input type="number" step="0.01" id="taxa-cdi" placeholder="Ex: 10.75">
     </div>
     <div class="macro-item">
       <label>Tesouro IPCA+ Longo <span class="auto-tag">✏️ Manual</span></label>
@@ -466,11 +466,17 @@
             MACRO_DATA.taxaIpca = data.taxaIpca || null;
             console.log('✅ Dados macro carregados:', MACRO_DATA);
             
-            // Preenche os campos na tela
+            // Preenche os campos na tela (AGORA MESMO, não espera login)
             const cdiInput = document.getElementById('taxa-cdi');
             const ipcaInput = document.getElementById('taxa-ipca');
-            if (cdiInput && MACRO_DATA.taxaCdi) cdiInput.value = MACRO_DATA.taxaCdi;
-            if (ipcaInput && MACRO_DATA.taxaIpca) ipcaInput.value = MACRO_DATA.taxaIpca;
+            if (cdiInput && MACRO_DATA.taxaCdi) {
+              cdiInput.value = MACRO_DATA.taxaCdi;
+              console.log('📊 CDI preenchido:', MACRO_DATA.taxaCdi);
+            }
+            if (ipcaInput && MACRO_DATA.taxaIpca) {
+              ipcaInput.value = MACRO_DATA.taxaIpca;
+              console.log('📊 IPCA preenchido:', MACRO_DATA.taxaIpca);
+            }
             
             resolve(true);
           } else {

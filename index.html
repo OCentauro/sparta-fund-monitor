@@ -277,6 +277,27 @@
       font-size: 0.85rem;
     }
 
+    /* [SEÇÃO 10.6] Score Badge Styles */
+    .score-badge {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.7rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .score-buy-strong { background: #059669; color: white; } /* Verde Escuro */
+    .score-buy { background: #10b981; color: white; }        /* Verde */
+    .score-neutral { background: #f59e0b; color: #1e293b; }  /* Amarelo */
+    .score-sell { background: #ef4444; color: white; }       /* Vermelho */
+    .score-sell-strong { background: #991b1b; color: white; }/* Vermelho Escuro */
+    
+    .card { position: relative; } /* Garante que o badge fique dentro do card */
+
     /* [SEÇÃO 11] Responsivo */
     @media (max-width: 480px) { 
       header { flex-direction: column; align-items: flex-start; } 
@@ -826,41 +847,108 @@
       return Number(val).toFixed(decimals) + suffix;
     }
 
-    /* [SEÇÃO 21] Criar Card - COM MELHORIAS */
+    /* [SEÇÃO 20.5] Lógica de Score do Fundo */
+    function calculateFundScore(ticker, fund, price) {
+      // 1. Cálculos Base
+      const pvp = (fund.vp && price) ? (price / fund.vp) : 1.0;
+      const spread = (fund.dy && fund.taxaRef) ? (fund.dy - fund.taxaRef) : 0;
+      const pffo = fund.pffo || 10;
+
+      // 2. Normalização dos Subscores (0 a 100)
+      // Valuation (P/VP): < 0.95 é 100, > 1.15 é 0
+      let vScore = 100 - ((pvp - 0.95) / (1.15 - 0.95)) * 100;
+      vScore = Math.max(0, Math.min(100, vScore));
+
+      // Renda (Spread sobre benchmark): > 3% é 100, < 0% é 0
+      let rScore = ((spread - 0) / (3 - 0)) * 100;
+      rScore = Math.max(0, Math.min(100, rScore));
+
+      // Qualidade (P/FFO): < 8 é 100, > 12 é 0
+      let qScore = 100 - ((pffo - 8) / (12 - 8)) * 100;
+      qScore = Math.max(0, Math.min(100, qScore));
+
+      // Tendência (Proxy): Como não temos histórico ainda, usamos P/VP como proxy de valor.
+      // Se P/VP < 1.0, damos 70. Se não, 50 (neutro).
+      let tScore = pvp < 1.0 ? 70 : 50;
+
+      // Liquidez: MXRF11 é muito líquido (90), outros são bons (70)
+      let lScore = ticker === 'MXRF11' ? 90 : 70;
+
+      // 3. Pesos Específicos por Fundo (do seu types.ts)
+      const weights = {
+        "JURO11":  { T: 0.25, V: 0.20, R: 0.15, Q: 0.30, L: 0.10 },
+        "CDII11":  { T: 0.20, V: 0.20, R: 0.25, Q: 0.25, L: 0.10 },
+        "CRAA11":  { T: 0.15, V: 0.15, R: 0.20, Q: 0.40, L: 0.10 },
+        "DIVS11":  { T: 0.30, V: 0.20, R: 0.15, Q: 0.25, L: 0.10 },
+        "MXRF11":  { T: 0.20, V: 0.30, R: 0.25, Q: 0.15, L: 0.10 }
+      };
+
+      const w = weights[ticker] || { T: 0.20, V: 0.20, R: 0.20, Q: 0.20, L: 0.20 };
+
+      // 4. Cálculo Final Ponderado
+      const finalScore = (tScore * w.T) + (vScore * w.V) + (rScore * w.R) + (qScore * w.Q) + (lScore * w.L);
+      const roundedScore = Math.round(finalScore);
+
+      // 5. Classificação
+      let classification = "MANUTENÇÃO";
+      let colorClass = "score-neutral";
+      
+      if (roundedScore >= 75) {
+        classification = "COMPRA FORTE";
+        colorClass = "score-buy-strong";
+      } else if (roundedScore >= 60) {
+        classification = "COMPRA";
+        colorClass = "score-buy";
+      } else if (roundedScore >= 45) {
+        classification = "MANUTENÇÃO";
+        colorClass = "score-neutral";
+      } else if (roundedScore >= 30) {
+        classification = "SAÍDA PARCIAL";
+        colorClass = "score-sell";
+      } else {
+        classification = "SAÍDA DEFENSIVA";
+        colorClass = "score-sell-strong";
+      }
+
+      return { score: roundedScore, classification, colorClass, pvp, spread };
+    }
+
+    /* [SEÇÃO 21] Criar Card - COM SCORE INTEGRADO */
     function createCard(priceData) {
       const { symbol, regularMarketPrice } = priceData;
       const fund = FUNDAMENTALS[symbol] || {};
+      
+      // 1. Calcula o Score
+      const scoreData = calculateFundScore(symbol, fund, regularMarketPrice);
       
       // Links: Google Finance + Site oficial do fundo
       const googleUrl = `https://www.google.com/finance/quote/${symbol}:BVMF`;
       const fundLink = FUND_LINKS[symbol] || { site: googleUrl, nome: 'Google Finance' };
       
-      // Calcular P/VP automaticamente
-      const pvp = (fund.vp && regularMarketPrice) 
-        ? (regularMarketPrice / fund.vp) 
-        : null;
-      
       // Determinar classe CSS para P/VP
       let pvpClass = '';
-      if (pvp !== null && pvp !== undefined) {
-        if (pvp < 1) pvpClass = 'pvp-discount';
-        else if (pvp > 1) pvpClass = 'pvp-premium';
-      }
+      if (scoreData.pvp < 1) pvpClass = 'pvp-discount';
+      else if (scoreData.pvp > 1) pvpClass = 'pvp-premium';
 
       // Lembrete específico para o MXRF11
       let mxrfNote = '';
       if (symbol === 'MXRF11') {
-        mxrfNote = `<div class="note mxrf-note"> <b>Fonte do VP:</b> Documentos > Planilha de Fundamentos ou Informe Mensal no site da XP Asset.</div>`;
+        mxrfNote = `<div class="note mxrf-note">📁 <b>Fonte do VP:</b> Documentos > Planilha de Fundamentos ou Informe Mensal no site da XP Asset.</div>`;
       }
 
       // Formatar benchmark com taxa
-      let benchmarkDisplay = fund.benchmark || '';
+      let benchmarkDisplay = fund.benchmark || 'N/A';
       if (fund.taxaRef !== null && fund.taxaRef !== undefined) {
         benchmarkDisplay += ` (${fund.taxaRef.toFixed(2)}%)`;
       }
 
       return `
         <div class="card">
+          <!-- BADGE DE SCORE NO TOPO -->
+          <div class="score-badge ${scoreData.colorClass}">
+            ${scoreData.classification} (${scoreData.score})
+          </div>
+          
           <div class="ticker">${symbol}</div>
           <div class="name">Fundo Sparta Asset Management</div>
           <div class="metrics">
@@ -870,7 +958,7 @@
             </div>
             <div class="metric ${pvpClass}">
               <span class="label">P/VP</span>
-              <span class="value">${formatNumber(pvp)}</span>
+              <span class="value">${formatNumber(scoreData.pvp)}</span>
             </div>
             <div class="metric">
               <span class="label">P/FFO</span>
@@ -890,7 +978,7 @@
             <a href="${fundLink.site}" target="_blank" class="link">${fundLink.nome}</a>
           </div>
           <div class="note">📊 Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}. P/FFO é o padrão institucional para FIIs.</div>
-          ${benchmarkDisplay ? `<div class="note">🎯 <b>Benchmark:</b> ${benchmarkDisplay}</div>` : ''}
+          ${benchmarkDisplay !== 'N/A' ? `<div class="note">🎯 <b>Benchmark:</b> ${benchmarkDisplay} | Spread: ${scoreData.spread > 0 ? '+' : ''}${scoreData.spread.toFixed(2)}%</div>` : ''}
           ${mxrfNote}
         </div>
       `;

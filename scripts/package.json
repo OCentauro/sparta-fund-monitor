@@ -1,12 +1,12 @@
 {
-  "name": "sparta-fund-monitor",
+  "name": "sparta-fund-monitor-automation",
   "version": "1.1.0",
-  "description": "Sparta Fund Monitor - Automated Fundamentals Updater",
   "type": "module",
+  "description": "Script de automação de fundamentos via GitHub Actions",
   "scripts": {
-    "update-fundamentals": "node scripts/auto-update-fundamentals.mjs"
+    "update": "node scripts/auto-update-fundamentals.mjs"
   },
   "dependencies": {
-    "firebase": "^12.15.0"
+    "firebase": "^10.12.0"
   }
 }

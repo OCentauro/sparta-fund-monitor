@@ -1,13 +1,7 @@
-/*
-  Auto-Update Fundamentals Script
-  Baseado na lógica do server.ts do Gemini
-  Roda via GitHub Actions diariamente
-*/
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
-import { GoogleGenAI } from "@google/genai";
 
-// 1. Configuração do Firebase
+// 1. Configuração do Firebase (Vem das Variáveis de Ambiente do GitHub)
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
@@ -20,136 +14,90 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// 2. Inicializar Gemini (opcional - para fallback)
-let ai = null;
-if (process.env.GEMINI_API_KEY) {
-  ai = new GoogleGenAI({
-    apiKey: process.env.GEMINI_API_KEY,
-    httpOptions: {
-      headers: { 'User-Agent': 'Sparta-Fund-Monitor-Auto-Update' }
-    }
-  });
-  console.log('✅ Gemini API inicializada');
-} else {
-  console.log('⚠️  GEMINI_API_KEY não configurada - usando apenas Regex');
-}
+// 2. Configuração dos Fundos e URLs
+const FUNDS_CONFIG = [
+  { ticker: 'JURO11', url: 'https://www.sparta.com.br/sparta-fi-infra/' },
+  { ticker: 'DIVS11', url: 'https://www.sparta.com.br/divs11/' },
+  { ticker: 'CRAA11', url: 'https://www.sparta.com.br/craa11/' },
+  { ticker: 'CDII11', url: 'https://www.sparta.com.br/sparta-cdii11/' },
+  { ticker: 'MXRF11', url: 'https://www.xpasset.com.br/fundos/maxi-renda/' }
+];
 
-// 3. Configuração dos Fundos (igual ao server.ts)
-const HOT_PAGES = {
-  "CDII11": "https://www.sparta.com.br/sparta-cdii11/",
-  "JURO11": "https://www.sparta.com.br/sparta-fi-infra/",
-  "DIVS11": "https://www.sparta.com.br/divs11/",
-  "CRAA11": "https://www.sparta.com.br/craa11/",
-  "MXRF11": "https://www.xpasset.com.br/fundos/maxi-renda/"
-};
-
-// 4. Função de Extração (mesma lógica do server.ts)
-async function extractCotaPatrimonial(ticker, url, steps = []) {
-  console.log(`\n🔍 Analisando ${ticker}...`);
+// 3. Função de Extração com Fallback Seguro
+async function extractCotaPatrimonial(ticker, url) {
+  console.log(`\n🔍 Analisando ${ticker} em: ${url}`);
   
   try {
     const response = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
         "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
       },
       redirect: 'follow'
     });
-    
+
     if (!response.ok) {
-      console.log(`❌ Erro HTTP ${response.status} para ${ticker}`);
+      console.log(`   ⚠️ Erro HTTP ${response.status}. Usando valor em cache.`);
       return null;
     }
-    
+
     const html = await response.text();
-    console.log(`📄 HTML recebido: ${html.length} caracteres`);
     
-    // PRIORIDADE 1: Regex (super rápido e robusto)
+    // Verificação rápida: se o HTML for muito pequeno, é provável que seja uma SPA vazia
+    if (html.length < 5000) {
+      console.log(`   ⚠️ HTML muito pequeno (${html.length} chars). Provável SPA. Usando valor em cache.`);
+      return null;
+    }
+
+    // Múltiplos padrões de Regex para maximizar a chance de encontrar o valor
     const regexes = [
-      /cota\s+patrimonial[\s\S]{0,100}r\$\s*([0-9]{2,3}[.,][0-9]{2})/i,
-      /valor\s+patrimonial[\s\S]{0,100}r\$\s*([0-9]{2,3}[.,][0-9]{2})/i,
-      /([0-9]{2,3}[.,][0-9]{2})\s*\(cota\s+patrimonial\)/i,
-      /cota\s+patrimonial[^\d]*([0-9]{2,3}[.,][0-9]{2})/i
+      /Cota Patrimonial[\s\S]{0,150}\|\s*([0-9]{2,3}[.,][0-9]{2})/i,
+      /Cota Patrimonial[\s\S]{0,150}([0-9]{2,3}[.,][0-9]{2})/i,
+      /Valor Patrimonial[\s\S]{0,150}R?\$\s*([0-9]{2,3}[.,][0-9]{2})/i,
+      /Cota de Fechamento[\s\S]{0,150}([0-9]{2,3}[.,][0-9]{2})/i,
+      /Cota Patrimonial[\s\S]{0,100}R\$\s*([0-9]{2,3}[.,][0-9]{2})/i
     ];
-    
-    for (const rx of regexes) {
-      const match = html.match(rx);
+
+    for (const regex of regexes) {
+      const match = html.match(regex);
       if (match && match[1]) {
         const val = parseFloat(match[1].replace(",", "."));
         if (!isNaN(val) && val > 0) {
-          console.log(`✅ ${ticker}: R$ ${val.toFixed(2)} (via Regex)`);
+          console.log(`   ✅ SUCESSO: Cota encontrada via Regex = R$ ${val.toFixed(2)}`);
           return val;
         }
       }
     }
-    
-    // PRIORIDADE 2: Gemini (fallback quando Regex falha)
-    if (ai) {
-      try {
-        const cleanText = html
-          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-          .replace(/<[^>]+>/g, " ")
-          .replace(/\s+/g, " ")
-          .substring(0, 10000);
-        
-        const prompt = `Você é um robô de extração de dados financeiros.
-Encontre o valor mais recente da "Cota Patrimonial" do fundo ${ticker}.
-Retorne APENAS um objeto JSON: {"cota": 101.13}
-Se não encontrar, retorne {"cota": null}.
 
-CONTEÚDO:
-${cleanText}`;
-        
-        const res = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: prompt,
-          config: { responseMimeType: "application/json" }
-        });
-        
-        const parsed = JSON.parse(res.text?.trim() || "{}");
-        if (parsed.cota && typeof parsed.cota === "number" && parsed.cota > 0) {
-          console.log(`✅ ${ticker}: R$ ${parsed.cota.toFixed(2)} (via Gemini)`);
-          return parsed.cota;
-        }
-      } catch (err) {
-        console.log(`⚠️  Gemini falhou para ${ticker}: ${err.message}`);
-      }
-    }
-    
-    console.log(`❌ ${ticker}: Não foi possível extrair`);
+    console.log(`   ⚠️ Nenhuma Regex encontrou a Cota Patrimonial. Usando valor em cache.`);
     return null;
-    
-  } catch (err) {
-    console.log(`❌ Erro ao buscar ${ticker}: ${err.message}`);
+
+  } catch (error) {
+    console.log(`   ❌ Erro de rede ao buscar ${ticker}: ${error.message}. Usando valor em cache.`);
     return null;
   }
 }
 
-// 5. Função Principal
+// 4. Função Principal
 async function runAutoUpdate() {
   console.log("🤖 Iniciando Auto-Update de Fundamentos...\n");
-  console.log(`📅 Data: ${new Date().toISOString()}\n`);
-  
   const today = new Date().toISOString().split('T')[0];
   let successCount = 0;
   let updateCount = 0;
-  
-  for (const [ticker, url] of Object.entries(HOT_PAGES)) {
-    // Buscar valor atual no Firestore
-    const docRef = doc(db, "fundamentals", ticker);
+
+  for (const fund of FUNDS_CONFIG) {
+    // Busca valor atual no Firestore
+    const docRef = doc(db, "fundamentals", fund.ticker);
     const docSnap = await getDoc(docRef);
     const currentData = docSnap.exists() ? docSnap.data() : {};
     const currentCota = currentData.vp || 0;
-    
-    // Extrair nova cota
-    const newCota = await extractCotaPatrimonial(ticker, url);
-    
+
+    // Tenta extrair novo valor
+    const newCota = await extractCotaPatrimonial(fund.ticker, fund.url);
+
     if (newCota !== null && !isNaN(newCota)) {
       successCount++;
-      
-      // Só atualiza se mudou
       if (currentCota !== newCota) {
         await setDoc(docRef, {
           ...currentData,
@@ -158,29 +106,27 @@ async function runAutoUpdate() {
           updatedAt: new Date(),
           autoUpdated: true
         }, { merge: true });
-        
-        console.log(`💾 ${ticker} atualizado: R$ ${currentCota.toFixed(2)} → R$ ${newCota.toFixed(2)}`);
+        console.log(`   💾 ${fund.ticker} ATUALIZADO: R$ ${currentCota.toFixed(2)} → R$ ${newCota.toFixed(2)}`);
         updateCount++;
       } else {
-        console.log(`️  ${ticker} inalterado (R$ ${newCota.toFixed(2)})`);
+        console.log(`   ⏸️ ${fund.ticker} inalterado (R$ ${newCota.toFixed(2)})`);
       }
     } else {
-      console.log(`⚠️  ${ticker} mantido (R$ ${currentCota.toFixed(2)})`);
+      console.log(`   🛡️ ${fund.ticker} MANTIDO em cache (R$ ${currentCota.toFixed(2)})`);
     }
-    
-    // Pausa para não sobrecarregar
+
+    // Pausa de 2 segundos para não sobrecarregar o servidor de destino
     await new Promise(resolve => setTimeout(resolve, 2000));
   }
-  
+
   console.log("\n" + "=".repeat(60));
   console.log("🏁 Auto-Update Concluído!");
-  console.log(`✅ Fundos analisados: ${successCount}/${Object.keys(HOT_PAGES).length}`);
-  console.log(`📝 Fundos atualizados: ${updateCount}`);
+  console.log(`✅ Fundos analisados com sucesso: ${successCount}/${FUNDS_CONFIG.length}`);
+  console.log(`📝 Fundos efetivamente atualizados no DB: ${updateCount}`);
   console.log("=".repeat(60));
 }
 
-// Executar
 runAutoUpdate().catch(err => {
-  console.error("❌ Erro crítico:", err);
+  console.error("❌ Erro crítico no script:", err);
   process.exit(1);
 });

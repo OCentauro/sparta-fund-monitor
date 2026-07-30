@@ -1,0 +1,12 @@
+{
+  "name": "sparta-fund-monitor",
+  "version": "1.1.0",
+  "description": "Sparta Fund Monitor - Automated Fundamentals Updater",
+  "type": "module",
+  "scripts": {
+    "update-fundamentals": "node scripts/auto-update-fundamentals.mjs"
+  },
+  "dependencies": {
+    "firebase": "^12.15.0"
+  }
+}

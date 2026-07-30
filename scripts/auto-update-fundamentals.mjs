@@ -1,7 +1,12 @@
+/*
+  Auto-Update Fundamentals Script (Puppeteer Version)
+  Usa Chrome Headless para renderizar SPAs e extrair dados
+*/
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
+import puppeteer from "puppeteer";
 
-// 1. Configuração do Firebase (Vem das Variáveis de Ambiente do GitHub)
+// 1. Configuração do Firebase
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
   authDomain: process.env.FIREBASE_AUTH_DOMAIN,
@@ -14,43 +19,51 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-// 2. Configuração dos Fundos e URLs
+// 2. Configuração dos Fundos
 const FUNDS_CONFIG = [
   { ticker: 'JURO11', url: 'https://www.sparta.com.br/sparta-fi-infra/' },
   { ticker: 'DIVS11', url: 'https://www.sparta.com.br/divs11/' },
   { ticker: 'CRAA11', url: 'https://www.sparta.com.br/craa11/' },
-  { ticker: 'CDII11', url: 'https://www.sparta.com.br/sparta-cdii11/' },
-  { ticker: 'MXRF11', url: 'https://www.xpasset.com.br/fundos/maxi-renda/' }
+  { ticker: 'CDII11', url: 'https://www.sparta.com.br/sparta-cdii11/' }
 ];
 
-// 3. Função de Extração com Fallback Seguro
-async function extractCotaPatrimonial(ticker, url) {
-  console.log(`\n🔍 Analisando ${ticker} em: ${url}`);
+// 3. Função de Extração com Puppeteer
+async function extractCotaPatrimonialPuppeteer(ticker, url) {
+  console.log(`\n🔍 [Puppeteer] Analisando ${ticker} em: ${url}`);
   
+  let browser = null;
   try {
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
-      },
-      redirect: 'follow'
+    // Lança o Chrome headless
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-extensions'
+      ]
     });
 
-    if (!response.ok) {
-      console.log(`   ⚠️ Erro HTTP ${response.status}. Usando valor em cache.`);
-      return null;
-    }
-
-    const html = await response.text();
+    const page = await browser.newPage();
     
-    // Verificação rápida: se o HTML for muito pequeno, é provável que seja uma SPA vazia
-    if (html.length < 5000) {
-      console.log(`   ⚠️ HTML muito pequeno (${html.length} chars). Provável SPA. Usando valor em cache.`);
-      return null;
-    }
+    // Configura User-Agent para parecer um navegador real
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    
+    console.log(`   🌐 Navegando até a página...`);
+    await page.goto(url, { 
+      waitUntil: 'networkidle2', // Espera até não haver requisições de rede por 500ms
+      timeout: 30000 
+    });
 
-    // Múltiplos padrões de Regex para maximizar a chance de encontrar o valor
+    // Aguarda um pouco mais para garantir que o conteúdo dinâmico carregou
+    await page.waitForTimeout(3000);
+
+    // Extrai o conteúdo da página
+    const html = await page.content();
+    console.log(`   📄 HTML recebido: ${html.length} caracteres`);
+
+    // Tenta múltiplas estratégias de extração
     const regexes = [
       /Cota Patrimonial[\s\S]{0,150}\|\s*([0-9]{2,3}[.,][0-9]{2})/i,
       /Cota Patrimonial[\s\S]{0,150}([0-9]{2,3}[.,][0-9]{2})/i,
@@ -70,18 +83,45 @@ async function extractCotaPatrimonial(ticker, url) {
       }
     }
 
-    console.log(`   ⚠️ Nenhuma Regex encontrou a Cota Patrimonial. Usando valor em cache.`);
+    // Estratégia alternativa: tentar extrair via seletores CSS comuns
+    const selectors = [
+      'table td',
+      '.cota-patrimonial',
+      '[data-testid="cota-patrimonial"]',
+      '.valor-patrimonial'
+    ];
+
+    for (const selector of selectors) {
+      const elements = await page.$$(selector);
+      for (const element of elements) {
+        const text = await element.evaluate(el => el.textContent);
+        const match = text.match(/([0-9]{2,3}[.,][0-9]{2})/);
+        if (match) {
+          const val = parseFloat(match[1].replace(",", "."));
+          if (val > 0 && val < 200) { // Validação básica
+            console.log(`   ✅ SUCESSO: Cota encontrada via selector "${selector}" = R$ ${val.toFixed(2)}`);
+            return val;
+          }
+        }
+      }
+    }
+
+    console.log(`   ⚠️ Nenhuma estratégia encontrou a Cota Patrimonial`);
     return null;
 
   } catch (error) {
-    console.log(`   ❌ Erro de rede ao buscar ${ticker}: ${error.message}. Usando valor em cache.`);
+    console.error(`   ❌ Erro ao buscar ${ticker}:`, error.message);
     return null;
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
 }
 
 // 4. Função Principal
 async function runAutoUpdate() {
-  console.log("🤖 Iniciando Auto-Update de Fundamentos...\n");
+  console.log(" Iniciando Auto-Update de Fundamentos (Puppeteer)...\n");
   const today = new Date().toISOString().split('T')[0];
   let successCount = 0;
   let updateCount = 0;
@@ -93,8 +133,8 @@ async function runAutoUpdate() {
     const currentData = docSnap.exists() ? docSnap.data() : {};
     const currentCota = currentData.vp || 0;
 
-    // Tenta extrair novo valor
-    const newCota = await extractCotaPatrimonial(fund.ticker, fund.url);
+    // Tenta extrair novo valor com Puppeteer
+    const newCota = await extractCotaPatrimonialPuppeteer(fund.ticker, fund.url);
 
     if (newCota !== null && !isNaN(newCota)) {
       successCount++;
@@ -112,11 +152,11 @@ async function runAutoUpdate() {
         console.log(`   ⏸️ ${fund.ticker} inalterado (R$ ${newCota.toFixed(2)})`);
       }
     } else {
-      console.log(`   🛡️ ${fund.ticker} MANTIDO em cache (R$ ${currentCota.toFixed(2)})`);
+      console.log(`   ️ ${fund.ticker} MANTIDO em cache (R$ ${currentCota.toFixed(2)})`);
     }
 
-    // Pausa de 2 segundos para não sobrecarregar o servidor de destino
-    await new Promise(resolve => setTimeout(resolve, 2000));
+    // Pausa entre fundos para não sobrecarregar
+    await new Promise(resolve => setTimeout(resolve, 3000));
   }
 
   console.log("\n" + "=".repeat(60));

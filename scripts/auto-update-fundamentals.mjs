@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
@@ -27,6 +27,7 @@ async function extractCotaPatrimonialPuppeteer(ticker, url) {
   let browser = null;
   try {
     browser = await puppeteer.launch({
+      executablePath: '/usr/bin/google-chrome-stable',
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
     });
@@ -36,9 +37,10 @@ async function extractCotaPatrimonialPuppeteer(ticker, url) {
     
     console.log(`   🌐 Navegando...`);
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-
-    // Espera extra de 5 segundos para garantir que o JavaScript renderizou a tabela
-    await page.waitForTimeout(5000);
+    
+    // CORREÇÃO: Usando setTimeout padrão do JavaScript em vez de page.waitForTimeout
+    console.log(`   ⏳ Aguardando renderização do JavaScript...`);
+    await new Promise(resolve => setTimeout(resolve, 5000));
 
     const html = await page.content();
     console.log(`   📄 HTML recebido: ${html.length} caracteres`);
@@ -49,14 +51,14 @@ async function extractCotaPatrimonialPuppeteer(ticker, url) {
     const patrIndex = lowerHtml.indexOf('patrimonial');
     
     if (cotaIndex !== -1) {
-      console.log(`   🔍 Trecho do HTML com "cota": ...${html.substring(Math.max(0, cotaIndex - 40), cotaIndex + 120)}...`);
+      console.log(`   🔍 Trecho do HTML com "cota": ...${html.substring(Math.max(0, cotaIndex - 50), cotaIndex + 150)}...`);
     } else if (patrIndex !== -1) {
-      console.log(`   🔍 Trecho do HTML com "patrimonial": ...${html.substring(Math.max(0, patrIndex - 40), patrIndex + 120)}...`);
+      console.log(`   🔍 Trecho do HTML com "patrimonial": ...${html.substring(Math.max(0, patrIndex - 50), patrIndex + 150)}...`);
     } else {
       console.log(`   ⚠️ Palavras "cota" ou "patrimonial" NÃO encontradas no HTML renderizado.`);
     }
 
-    // Regex mais agressivas para capturar o valor
+    // Regex para capturar o valor
     const regexes = [
       /Cota\s+Patrimonial[\s\S]{0,200}([0-9]{2,3}[.,][0-9]{2})/i,
       /Valor\s+Patrimonial[\s\S]{0,200}([0-9]{2,3}[.,][0-9]{2})/i,
@@ -68,7 +70,7 @@ async function extractCotaPatrimonialPuppeteer(ticker, url) {
       const match = html.match(regex);
       if (match && match[1]) {
         const val = parseFloat(match[1].replace(",", "."));
-        if (!isNaN(val) && val > 0 && val < 500) { // Validação de sanidade (cota não pode ser 5000)
+        if (!isNaN(val) && val > 0 && val < 500) {
           console.log(`   ✅ SUCESSO: Cota encontrada = R$ ${val.toFixed(2)}`);
           return val;
         }
@@ -87,7 +89,7 @@ async function extractCotaPatrimonialPuppeteer(ticker, url) {
 }
 
 async function runAutoUpdate() {
-  console.log("🤖 Iniciando Auto-Update de Fundamentos (Puppeteer Debug)...\n");
+  console.log("🤖 Iniciando Auto-Update de Fundamentos (Puppeteer Corrigido)...\n");
   const today = new Date().toISOString().split('T')[0];
   let successCount = 0;
   let updateCount = 0;

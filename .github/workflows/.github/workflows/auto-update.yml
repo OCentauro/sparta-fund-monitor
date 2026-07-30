@@ -1,0 +1,38 @@
+name: Auto-Update Fundamentals
+
+on:
+  schedule:
+    # Roda todo dia às 08:00 (horário de Brasília = 11:00 UTC)
+    - cron: '0 11 * * *'
+  workflow_dispatch: # Permite rodar manualmente
+
+jobs:
+  auto-update:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar dependências
+        run: |
+          cd scripts
+          npm install
+
+      - name: Rodar Auto-Update
+        env:
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }} # Opcional
+        run: |
+          cd scripts
+          node auto-update-fundamentals.mjs

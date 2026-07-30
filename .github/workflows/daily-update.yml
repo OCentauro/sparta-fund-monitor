@@ -1,82 +1,32 @@
-/* 
-  SCRIPT DE DEBUG - Versão temporária para diagnosticar scraping
-*/
-import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
+name: Daily Fundamentals Update
 
-const firebaseConfig = {
-  apiKey: process.env.FIREBASE_API_KEY,
-  authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-  projectId: process.env.FIREBASE_PROJECT_ID,
-  storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-  appId: process.env.FIREBASE_APP_ID
-};
+on:
+  schedule:
+    - cron: '0 14 * * *'
+  workflow_dispatch: {}
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app); 
+jobs:
+  update-fundamentals:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
 
-const FUNDS_CONFIG = [
-  { ticker: 'JURO11', url: 'https://www.sparta.com.br/sparta-fi-infra/' },
-  { ticker: 'DIVS11', url: 'https://www.sparta.com.br/divs11/' },
-  { ticker: 'CRAA11', url: 'https://www.sparta.com.br/craa11/' },
-  { ticker: 'CDII11', url: 'https://www.sparta.com.br/sparta-cdii11/' },
-  { ticker: 'MXRF11', url: 'https://www.xpasset.com.br/fundos/maxi-renda/' }
-];
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-async function debugExtractCotaPatrimonial(url, ticker) {
-  try {
-    console.log(`\n🔍 [DEBUG] Acessando: ${url}`);
-    
-    const response = await fetch(url, {
-      headers: { 
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-        "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7"
-      },
-      redirect: 'follow'
-    });
-    
-    console.log(`📡 Status HTTP: ${response.status} ${response.statusText}`);
-    console.log(`📍 URL final: ${response.url}`);
-    
-    if (!response.ok) {
-      console.log(`❌ Erro HTTP: ${response.status}`);
-      return null;
-    }
-    
-    const html = await response.text();
-    console.log(`📄 Tamanho do HTML: ${html.length} caracteres`);
-    
-    // Mostra os primeiros 2000 caracteres para análise
-    console.log(`\n📋 [PRIMEIROS 2000 CARACTERES DO HTML]:`);
-    console.log(html.substring(0, 2000));
-    console.log(`\n... (truncado) ...\n`);
-    
-    // Tenta múltiplas regex patterns
-    const regexes = [
-      { name: 'Cota Patrimonial com pipe', pattern: /Cota Patrimonial[\s\S]{0,150}\|\s*([0-9]{2,3}[.,][0-9]{2})/i },
-      { name: 'Cota Patrimonial simples', pattern: /Cota Patrimonial[\s\S]{0,150}([0-9]{2,3}[.,][0-9]{2})/i },
-      { name: 'Valor Patrimonial', pattern: /Valor Patrimonial[\s\S]{0,150}R?\$\s*([0-9]{2,3}[.,][0-9]{2})/i },
-      { name: 'Cota de Fechamento', pattern: /Cota de Fechamento[\s\S]{0,150}([0-9]{2,3}[.,][0-9]{2})/i },
-      { name: 'Cota Patrimonial R$', pattern: /Cota Patrimonial[\s\S]{0,100}R\$\s*([0-9]{2,3}[.,][0-9]{2})/i },
-      { name: 'VP genérico', pattern: /VP[\s\S]{0,50}R\$\s*([0-9]{2,3}[.,][0-9]{2})/i }
-    ];
-    
-    console.log(`\n🔎 [TESTANDO REGEX PATTERNS]:`);
-    for (const regex of regexes) {
-      const match = html.match(regex.pattern);
-      if (match && match[1]) {
-        const val = parseFloat(match[1].replace(",", "."));
-        console.log(`✅ Pattern "${regex.name}" encontrou: ${match[1]} (valor: ${val})`);
-        if (!isNaN(val) && val > 0) {
-          return val;
-        }
-      } else {
-        console.log(`❌ Pattern "${regex.name}" não encontrou match`);
-      }
-    }
-    
-    // Verifica se é SPA (página vazia ou com pouco conteúdo)
-    if (html.length < 5000) {
-     
+      - name: Instalar dependências do Firebase
+        run: npm install firebase
+
+      - name: Rodar script de atualização
+        env:
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+        run: node scripts/update-fundamentals.mjs

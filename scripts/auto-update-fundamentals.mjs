@@ -38,46 +38,37 @@ async function extractCotaPatrimonialPuppeteer(ticker, url) {
     console.log(`   🌐 Navegando...`);
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
     
-    // CORREÇÃO: Usando setTimeout padrão do JavaScript em vez de page.waitForTimeout
     console.log(`   ⏳ Aguardando renderização do JavaScript...`);
     await new Promise(resolve => setTimeout(resolve, 5000));
 
     const html = await page.content();
     console.log(`   📄 HTML recebido: ${html.length} caracteres`);
 
-    // DEBUG: Mostra um trecho do HTML onde a palavra "cota" ou "patrimonial" aparece
-    const lowerHtml = html.toLowerCase();
-    const cotaIndex = lowerHtml.indexOf('cota');
-    const patrIndex = lowerHtml.indexOf('patrimonial');
-    
-    if (cotaIndex !== -1) {
-      console.log(`   🔍 Trecho do HTML com "cota": ...${html.substring(Math.max(0, cotaIndex - 50), cotaIndex + 150)}...`);
-    } else if (patrIndex !== -1) {
-      console.log(`   🔍 Trecho do HTML com "patrimonial": ...${html.substring(Math.max(0, patrIndex - 50), patrIndex + 150)}...`);
-    } else {
-      console.log(`   ⚠️ Palavras "cota" ou "patrimonial" NÃO encontradas no HTML renderizado.`);
-    }
-
-    // Regex para capturar o valor
+    // Regex ultra-específicas para evitar falsos positivos como "Cotas negociadas"
     const regexes = [
-      /Cota\s+Patrimonial[\s\S]{0,200}([0-9]{2,3}[.,][0-9]{2})/i,
-      /Valor\s+Patrimonial[\s\S]{0,200}([0-9]{2,3}[.,][0-9]{2})/i,
-      /Cota[\s\S]{0,100}R\$\s*([0-9]{2,3}[.,][0-9]{2})/i,
-      /([0-9]{2,3}[.,][0-9]{2})\s*\(Cota/i
+      // 1. Procura por "Cota Patrimonial" ou "Valor Patrimonial" e o próximo número válido (10 a 200)
+      /(?:Cota|Valor)\s+Patrimonial[\s\S]{0,300}?\b([0-9]{2,3}[.,][0-9]{2})\b/i,
+      // 2. Fallback: procura apenas por "Patrimonial" e o próximo número válido
+      /Patrimonial[\s\S]{0,300}?\b([0-9]{2,3}[.,][0-9]{2})\b/i,
+      // 3. Fallback para formato com R$
+      /Patrimonial[\s\S]{0,300}R\$\s*([0-9]{2,3}[.,][0-9]{2})/i
     ];
 
     for (const regex of regexes) {
       const match = html.match(regex);
       if (match && match[1]) {
         const val = parseFloat(match[1].replace(",", "."));
-        if (!isNaN(val) && val > 0 && val < 500) {
+        // VALIDAÇÃO CRÍTICA: Cota de FII Sparta está entre 10 e 200. Ignora taxas (0.92) ou percentuais.
+        if (!isNaN(val) && val > 10 && val < 200) {
           console.log(`   ✅ SUCESSO: Cota encontrada = R$ ${val.toFixed(2)}`);
           return val;
+        } else {
+          console.log(`   ⚠️ Regex encontrou ${val}, mas está fora da faixa válida (10-200). Ignorando.`);
         }
       }
     }
 
-    console.log(`   ⚠️ Nenhuma Regex encontrou a Cota Patrimonial.`);
+    console.log(`   ⚠️ Nenhuma Regex encontrou a Cota Patrimonial válida.`);
     return null;
 
   } catch (error) {
@@ -89,7 +80,7 @@ async function extractCotaPatrimonialPuppeteer(ticker, url) {
 }
 
 async function runAutoUpdate() {
-  console.log("🤖 Iniciando Auto-Update de Fundamentos (Puppeteer Corrigido)...\n");
+  console.log("🤖 Iniciando Auto-Update de Fundamentos (Puppeteer Final)...\n");
   const today = new Date().toISOString().split('T')[0];
   let successCount = 0;
   let updateCount = 0;

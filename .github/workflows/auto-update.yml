@@ -3,7 +3,9 @@ name: Auto-Update Fundamentals (Puppeteer)
 on:
   schedule:
     - cron: '0 11 * * *' # Todo dia às 08:00 (horário de Brasília)
-  workflow_dispatch: # Permite rodar manualmente
+  workflow_dispatch: # Permite rodar manualmente pela interface do GitHub
+  repository_dispatch: #  NOVO: Permite que o App (frontend) dispare o robô
+    types: [trigger-update]
 
 jobs:
   auto-update:

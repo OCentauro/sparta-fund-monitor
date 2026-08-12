@@ -123,6 +123,18 @@ async function runAutoUpdate() {
 }
 
 runAutoUpdate().catch(err => {
-  console.error("❌ Erro crítico no script:", err);
-  process.exit(1);
+  console.log("\n" + "=".repeat(60));
+  console.log("🏁 Auto-Update Concluído!");
+  console.log(`✅ Fundos analisados com sucesso: ${successCount}/${FUNDS_CONFIG.length}`);
+  console.log(`📝 Fundos efetivamente atualizados no DB: ${updateCount}`);
+  console.log("=".repeat(60));
+
+  // 🚨 HEALTH CHECK: Se nenhum fundo foi atualizado com sucesso, algo está errado.
+  if (successCount === 0) {
+    console.error("🚨 ALERTA CRÍTICO DE INTEGRIDADE: Nenhuma cota foi extraída com sucesso!");
+    console.error("🚨 O site da Sparta pode ter alterado o layout ou o bloqueio de bots aumentou.");
+    console.error("🚨 Verifique o site manualmente e use a função 'Editar Fundamentos' no app se necessário.");
+    // Força o GitHub Actions a marcar o job como FALHO (vermelho), te alertando.
+    process.exit(1); 
+  }
 });

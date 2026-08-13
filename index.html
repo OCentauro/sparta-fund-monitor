@@ -1175,12 +1175,10 @@
         const functionUrl = 'https://triggerspartaupdate-e4tnxzli6a-uc.a.run.app';
 
         try {
-            // 3. Envia o sinal para o Firebase
+            // 3. Envia o sinal para o Firebase (Requisição Simples, sem preflight CORS)
             const response = await fetch(functionUrl, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
+                cache: 'no-store'
             });
 
             if (response.ok) {

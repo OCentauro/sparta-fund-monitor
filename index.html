@@ -1156,8 +1156,64 @@
       versionEl.textContent = 'v' + APP_VERSION;
     }
     
-    refreshBtn.addEventListener('click', () => fetchData(true));
-    document.getElementById('login-submit').addEventListener('click', handleLogin);
+//    refreshBtn.addEventListener('click', () => fetchData(true));
+      document.getElementById('login-submit').addEventListener('click', handleLogin);
+
+    // =================================================================
+    // [LÓGICA SEGURA] Botão ATUALIZAR: Chama a Cloud Function do Firebase
+    // =================================================================
+    refreshBtn.addEventListener('click', async function() {
+        const btn = this;
+        const originalText = btn.textContent;
+        
+        // 1. Feedback visual imediato
+        btn.disabled = true;
+        btn.textContent = '🔄 Acionando robô...';
+        btn.style.opacity = "0.7";
+
+        // 2. URL da sua Cloud Function
+        const functionUrl = 'https://triggerspartaupdate-e4tnxzli6a-uc.a.run.app';
+
+        try {
+            // 3. Envia o sinal para o Firebase
+            const response = await fetch(functionUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                btn.textContent = "✅ Robô acionado! (Aguarde ~2 min)";
+                btn.style.color = "green";
+                console.log("Sinal enviado para o Firebase com sucesso!");
+                
+                // Após 2 minutos, busca os dados atualizados do Firestore automaticamente
+                setTimeout(() => {
+                    fetchData(true); // Atualiza a tela com os novos dados
+                    btn.textContent = originalText;
+                    btn.style.color = "";
+                    btn.style.opacity = "1";
+                    btn.disabled = false;
+                }, 120000); // 120000 ms = 2 minutos
+                
+            } else {
+                throw new Error(`Erro no Webhook: ${response.status}`);
+            }
+        } catch (error) {
+            console.error("Falha ao acionar o robô:", error);
+            btn.textContent = "❌ Erro ao acionar";
+            btn.style.color = "red";
+            
+            setTimeout(() => {
+                btn.disabled = false;
+                btn.textContent = originalText;
+                btn.style.color = "";
+                btn.style.opacity = "1";
+            }, 3000);
+        }
+    });
+    // =================================================================
     
     setupAuthListener();
     

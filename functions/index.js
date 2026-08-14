@@ -1,17 +1,16 @@
 const { onRequest } = require("firebase-functions/v2/https");
 const https = require("https");
 
-exports.triggerSpartaUpdate = onRequest(async (req, res) => {
-    // 1. Configurar CORS para permitir chamadas do seu site
-    res.set("Access-Control-Allow-Origin", "*");
-    res.set("Access-Control-Allow-Methods", "GET, POST");
-    
-    if (req.method === "OPTIONS") {
-        res.status(204).send("");
-        return;
-    }
+exports.triggerSpartaUpdate = onRequest({ cors: true }, async (req, res) => {
+    console.log("🚀 [1] Função acionada com sucesso!");
 
-    // 2. Preparar a chamada para a API do GitHub
+    const pat = process.env.GITHUB_PAT;
+    if (!pat) {
+        console.error("❌ [2] ERRO CRÍTICO: GITHUB_PAT não foi encontrado no arquivo .env");
+        return res.status(500).json({ error: "Token de configuração ausente" });
+    }
+    console.log("✅ [3] Token encontrado. Início do token:", pat.substring(0, 15) + "...");
+
     const data = JSON.stringify({
         event_type: "trigger-update"
     });
@@ -22,29 +21,43 @@ exports.triggerSpartaUpdate = onRequest(async (req, res) => {
         method: "POST",
         headers: {
             "Accept": "application/vnd.github.v3+json",
-            "Authorization": `token ${process.env.GITHUB_PAT}`,
+            "Authorization": `token ${pat}`,
             "Content-Type": "application/json",
             "User-Agent": "Sparta-Fund-Monitor"
         }
     };
 
     try {
-        // 3. Executar a chamada
+        console.log("📡 [4] Enviando requisição para o GitHub...");
+        
         const githubResponse = await new Promise((resolve, reject) => {
-            const req = https.request(options, resolve);
-            req.on("error", reject);
-            req.write(data);
-            req.end();
+            const reqHttps = https.request(options, resolve);
+            reqHttps.on("error", (err) => {
+                console.error("❌ [5] Erro de rede na requisição:", err.message);
+                reject(err);
+            });
+            reqHttps.write(data);
+            reqHttps.end();
         });
 
-        // 4. Retornar o resultado para o seu app
+        console.log("📥 [6] Resposta do GitHub recebida. Status Code:", githubResponse.statusCode);
+
         if (githubResponse.statusCode === 204) {
+            console.log("🎉 [7] SUCESSO! Workflow disparado no GitHub.");
             res.status(200).json({ success: true, message: "Robô acionado!" });
         } else {
-            res.status(500).json({ error: `GitHub API error: ${githubResponse.statusCode}` });
+            let errorBody = '';
+            githubResponse.on('data', chunk => errorBody += chunk);
+            githubResponse.on('end', () => {
+                console.error(`⚠️ [8] GitHub retornou erro ${githubResponse.statusCode}. Detalhes:`, errorBody);
+                res.status(500).json({ 
+                    error: `GitHub API retornou ${githubResponse.statusCode}`, 
+                    details: errorBody 
+                });
+            });
         }
     } catch (error) {
-        console.error("Erro na Cloud Function:", error);
+        console.error("💥 [9] Exceção não tratada capturada:", error.message);
         res.status(500).json({ error: error.message });
     }
 });

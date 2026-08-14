@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#0f172a">
   <title>Sparta Fund Monitor</title>
   <link rel="manifest" href="manifest.json">
-  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="SpartaFII">
   
   <!-- Firebase SDK -->
@@ -410,10 +410,10 @@
     const db = firebase.firestore();
 
     /* [SEÇÃO 13] Configurações do App */
-    const APP_VERSION = '1.1.0'; // Score system implemented.  Atualize este número quando fizer mudanças importantes
+    const APP_VERSION = '1.2.0'; // Score system implemented.  Atualize este número quando fizer mudanças importantes
     const API_KEY = '7EpuGco9ML58FkFmZVyBWY';
     const FUNDS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11', 'MXRF11'];
-    const BASE_URL = 'https://brapi.dev/api/quote';
+    // APAGAR ESTA LINHA const BASE_URL = 'https://brapi.dev/api/quote';
     
     // URLs oficiais dos fundos
     const FUND_LINKS = {

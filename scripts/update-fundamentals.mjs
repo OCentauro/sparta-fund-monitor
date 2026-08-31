@@ -37,27 +37,39 @@ const FUNDS_CONFIG = [
 
 async function extractViaRegex(url, ticker) {
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    console.log(`🌐 [${ticker}] Tentando buscar via fetch...`);
     
     const response = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-      signal: controller.signal
+      headers: { 
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+      }
     });
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    
-    const html = await response.text();
-    const regex = /cota\s+patrimonial[\s\S]{0,150}r\$\s*([0-9]{2,3}[.,][0-9]{2})/i;
-    const match = html.match(regex);
-    
-    if (match && match[1]) {
-      return parseFloat(match[1].replace(",", "."));
+
+    if (!response.ok) {
+      console.error(`❌ [${ticker}] Erro HTTP: ${response.status} ${response.statusText}`);
+      return null;
     }
+
+    const html = await response.text();
+    console.log(`📄 [${ticker}] HTML recebido: ${html.length} caracteres`);
+
+    // Regex mais flexível: aceita 1 a 3 dígitos antes da vírgula e até 500 caracteres de distância
+    const regex = /cota\s+patrimonial[\s\S]{0,500}r\$\s*([0-9]{1,3}[.,][0-9]{2})/i;
+    const match = html.match(regex);
+
+    if (match && match[1]) {
+      const val = parseFloat(match[1].replace(",", "."));
+      console.log(`✅ [${ticker}] Regex encontrou com sucesso: ${val}`);
+      return val;
+    }
+
+    console.log(`⚠️ [${ticker}] Regex NÃO encontrou o padrão no HTML.`);
+    console.log(`💡 Dica: O site pode estar usando JavaScript para renderizar os dados ou bloqueando o fetch.`);
     return null;
+
   } catch (error) {
-    console.error(`❌ ${ticker}:`, error.message);
+    console.error(`❌ [${ticker}] Exceção durante o fetch:`, error.message);
     return null;
   }
 }
@@ -84,11 +96,10 @@ async function extractViaExcel(url, config) {
     
     console.log(`🌐 [${config.ticker}] Navegando para ${url}...`);
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Aguarda renderização
+    await new Promise(resolve => setTimeout(resolve, 2000));
     
     console.log(`🔍 [${config.ticker}] Procurando documento: "${config.documentName}"...`);
     
-    // 1. Encontrar o elemento do link
     const linkElement = await page.locator(`a:has-text("${config.documentName}")`).first();
     const count = await linkElement.count();
     
@@ -103,11 +114,9 @@ async function extractViaExcel(url, config) {
       return null;
     }
 
-    // 2. Pegar o href do link
     const href = await linkElement.getAttribute('href');
     console.log(`🔗 [${config.ticker}] URL do documento encontrada: ${href}`);
 
-    // 3. Usar o request do contexto do Playwright para baixar o arquivo
     console.log(`⬇️ [${config.ticker}] Baixando arquivo via request...`);
     const response = await page.request.get(href, { timeout: 15000 });
     
@@ -118,13 +127,11 @@ async function extractViaExcel(url, config) {
       return null;
     }
 
-    // 4. Salvar o buffer diretamente no arquivo
     const buffer = await response.body();
     const tempFile = `/tmp/${config.ticker}_fundamentos.xlsx`;
     fs.writeFileSync(tempFile, buffer);
     console.log(`✅ [${config.ticker}] Arquivo salvo em: ${tempFile} (${buffer.length} bytes)`);
     
-    // 5. Ler o Excel (CORREÇÃO: Usando buffer)
     console.log(`📖 [${config.ticker}] Lendo planilha "${config.sheetName}"...`);
     const fileBuffer = fs.readFileSync(tempFile);
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
@@ -142,7 +149,6 @@ async function extractViaExcel(url, config) {
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
     console.log(`📋 [${config.ticker}] Planilha tem ${data.length} linhas`);
     
-    // 6. Encontrar linha do VP (CORREÇÃO: Busca em TODAS as colunas, não só na primeira)
     let vpRowIndex = -1;
     let vpLabelColumnIndex = 0;
     
@@ -170,7 +176,6 @@ async function extractViaExcel(url, config) {
       return null;
     }
     
-    // 7. Pegar última coluna com valor (após a coluna do rótulo)
     const vpRow = data[vpRowIndex];
     let lastColumnIndex = -1;
     
@@ -192,7 +197,6 @@ async function extractViaExcel(url, config) {
     const vpValue = vpRow[lastColumnIndex];
     console.log(`📊 [${config.ticker}] VP bruto: ${vpValue} (coluna índice ${lastColumnIndex})`);
     
-    // 8. Converter para número
     let vpNumber = typeof vpValue === 'string' ? parseFloat(vpValue.replace(',', '.')) : parseFloat(vpValue);
     
     if (isNaN(vpNumber)) {
@@ -205,7 +209,6 @@ async function extractViaExcel(url, config) {
     
     console.log(`✅ [${config.ticker}] VP convertido: ${vpNumber}`);
     
-    // 9. Limpeza
     fs.unlinkSync(tempFile);
     await context.close();
     await browser.close();

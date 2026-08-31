@@ -1,6 +1,6 @@
 /*
   Robô de Atualização de Fundamentos (Cota Patrimonial)
-  v1.3.0 - Playwright + Excel + Debug avançado
+  v1.3.1 - Correção da Regex para buscar pela classe HTML da tabela
 */
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
@@ -37,7 +37,7 @@ const FUNDS_CONFIG = [
 
 async function extractViaRegex(url, ticker) {
   try {
-    console.log(` [${ticker}] Tentando buscar via fetch...`);
+    console.log(` [${ticker}] Buscando via fetch...`);
     
     const response = await fetch(url, {
       headers: { 
@@ -52,47 +52,30 @@ async function extractViaRegex(url, ticker) {
     }
 
     const html = await response.text();
-    console.log(`📄 [${ticker}] HTML recebido: ${html.length} caracteres`);
 
-    // DEBUG COMPLETO: Mostrar todas as ocorrências de "cota"
-    console.log(`\n🔍 [${ticker}] === DEBUG: Procurando "cota" no HTML ===`);
-    
-    // Encontrar todas as ocorrências de "cota" (case insensitive)
-    const cotaRegex = /cota/gi;
-    let match;
-    let occurrences = [];
-    
-    while ((match = cotaRegex.exec(html)) !== null) {
-      const start = Math.max(0, match.index - 50);
-      const end = Math.min(html.length, match.index + 250);
-      const context = html.substring(start, end).replace(/\s+/g, ' ').trim();
-      occurrences.push(context);
-    }
-    
-    console.log(` [${ticker}] Encontradas ${occurrences.length} ocorrências de "cota":`);
-    occurrences.slice(0, 8).forEach((ctx, i) => {
-      console.log(`   [${i+1}] ...${ctx}...`);
-    });
-    console.log(`🔍 [${ticker}] === FIM DEBUG ===\n`);
-
-    // Tentar múltiplas variações de regex
+    // Padrões de Regex em ordem de prioridade (do mais específico para o mais genérico)
     const regexPatterns = [
-      /cota\s+patrimonial[\s\S]{0,500}(\d{1,3}[.,]\d{2})/i,
-      /cota\s+patrimonial[^0-9]{0,100}(\d{1,3}[.,]\d{2})/i,
-      /patrimonial[\s\S]{0,300}(\d{1,3}[.,]\d{2})/i,
-      /cota[^0-9]{0,200}(\d{1,3}[.,]\d{2})/i
+      // 1. PROCURA DIRETO NA CÉLULA DA TABELA HTML (À prova de falhas do JS)
+      /<td[^>]*class="[^"]*column-cota-patrimonial[^"]*"[^>]*>\s*([\d.,]+)\s*<\/td>/i,
+      
+      // 2. Fallback: Procura a classe em qualquer tag (span, div, etc) seguida do número
+      /class="[^"]*column-cota-patrimonial[^"]*"[^>]*>\s*([\d.,]+)\s*</i,
+      
+      // 3. Fallback extremo: Procura o número após a ÚLTIMA ocorrência de "Cota Patrimonial" 
+      // (ignora o bloco de configuração JS inicial)
+      /cota\s+patrimonial[\s\S]{500,3000}(\d{1,3}[.,]\d{2})/i
     ];
 
     for (let i = 0; i < regexPatterns.length; i++) {
       const match = html.match(regexPatterns[i]);
       if (match && match[1]) {
         const val = parseFloat(match[1].replace(",", "."));
-        console.log(`✅ [${ticker}] Pattern ${i+1} encontrou: ${val}`);
+        console.log(`✅ [${ticker}] Pattern ${i+1} encontrou com sucesso: ${val}`);
         return val;
       }
     }
 
-    console.log(`️ [${ticker}] Nenhum pattern encontrou o valor.`);
+    console.log(`⚠️ [${ticker}] Nenhum padrão HTML encontrou o valor.`);
     return null;
 
   } catch (error) {
@@ -138,7 +121,7 @@ async function extractViaExcel(url, config) {
     }
 
     const href = await linkElement.getAttribute('href');
-    console.log(` [${config.ticker}] URL: ${href}`);
+    console.log(`🔗 [${config.ticker}] URL: ${href}`);
 
     console.log(`⬇️ [${config.ticker}] Baixando...`);
     const response = await page.request.get(href, { timeout: 15000 });
@@ -216,19 +199,19 @@ async function extractViaExcel(url, config) {
     }
     
     const vpValue = vpRow[lastColumnIndex];
-    console.log(` [${config.ticker}] VP bruto: ${vpValue}`);
+    console.log(`📊 [${config.ticker}] VP bruto: ${vpValue}`);
     
     let vpNumber = typeof vpValue === 'string' ? parseFloat(vpValue.replace(',', '.')) : parseFloat(vpValue);
     
     if (isNaN(vpNumber)) {
-      console.error(` [${config.ticker}] VP inválido: ${vpValue}`);
+      console.error(`❌ [${config.ticker}] VP inválido: ${vpValue}`);
       fs.unlinkSync(tempFile);
       await context.close();
       await browser.close();
       return null;
     }
     
-    console.log(`✅ [${config.ticker}] VP: ${vpNumber}`);
+    console.log(`✅ [${config.ticker}] VP convertido: ${vpNumber}`);
     
     fs.unlinkSync(tempFile);
     await context.close();
@@ -237,14 +220,14 @@ async function extractViaExcel(url, config) {
     return vpNumber;
     
   } catch (error) {
-    console.error(` [${config.ticker}] Erro:`, error.message);
+    console.error(`❌ [${config.ticker}] Erro:`, error.message);
     if (browser) await browser.close();
     return null;
   }
 }
 
 async function runUpdate() {
-  console.log(" Iniciando atualização v1.3.0...");
+  console.log("🚀 Iniciando atualização v1.3.1...");
   const today = new Date().toISOString().split('T')[0];
   let successCount = 0;
 

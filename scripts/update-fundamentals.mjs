@@ -94,10 +94,9 @@ async function extractViaExcel(url, config) {
     
     if (count === 0) {
       console.error(`❌ [${config.ticker}] Link com texto "${config.documentName}" não encontrado.`);
-      // Debug: listar alguns links para entender o que há na página
       const links = await page.locator('a').all();
       const linkTexts = await Promise.all(links.slice(0, 15).map(async l => await l.textContent()));
-      console.log(`🔗 Links encontrados na página:`, linkTexts.filter(t => t.trim() !== ''));
+      console.log(`🔗 Links encontrados na página:`, linkTexts.filter(t => t && t.trim() !== ''));
       
       await context.close();
       await browser.close();
@@ -108,7 +107,7 @@ async function extractViaExcel(url, config) {
     const href = await linkElement.getAttribute('href');
     console.log(`🔗 [${config.ticker}] URL do documento encontrada: ${href}`);
 
-    // 3. Usar o request do contexto do Playwright para baixar o arquivo (MUITO mais robusto)
+    // 3. Usar o request do contexto do Playwright para baixar o arquivo
     console.log(`⬇️ [${config.ticker}] Baixando arquivo via request...`);
     const response = await page.request.get(href, { timeout: 15000 });
     
@@ -125,10 +124,8 @@ async function extractViaExcel(url, config) {
     fs.writeFileSync(tempFile, buffer);
     console.log(`✅ [${config.ticker}] Arquivo salvo em: ${tempFile} (${buffer.length} bytes)`);
     
-    // 5. Ler o Excel
+    // 5. Ler o Excel (CORREÇÃO: Usando buffer)
     console.log(`📖 [${config.ticker}] Lendo planilha "${config.sheetName}"...`);
-    //const workbook = XLSX.readFile(tempFile);  PODE APAGAR
-    // CORREÇÃO: Ler como buffer e usar XLSX.read()
     const fileBuffer = fs.readFileSync(tempFile);
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
     
@@ -145,37 +142,47 @@ async function extractViaExcel(url, config) {
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
     console.log(`📋 [${config.ticker}] Planilha tem ${data.length} linhas`);
     
-    // Encontrar linha do VP
+    // 6. Encontrar linha do VP (CORREÇÃO: Busca em TODAS as colunas, não só na primeira)
     let vpRowIndex = -1;
+    let vpLabelColumnIndex = 0;
+    
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
-      if (row && row[0] && row[0].toString().toLowerCase().includes(config.rowLabel.toLowerCase())) {
-        vpRowIndex = i;
-        console.log(`✅ [${config.ticker}] Linha do VP encontrada: índice ${i}`);
-        break;
+      if (!row) continue;
+      
+      for (let col = 0; col < row.length; col++) {
+        if (row[col] && row[col].toString().toLowerCase().includes(config.rowLabel.toLowerCase())) {
+          vpRowIndex = i;
+          vpLabelColumnIndex = col;
+          console.log(`✅ [${config.ticker}] Linha do VP encontrada: índice ${i}, coluna do rótulo: ${col}`);
+          console.log(`   Texto encontrado: "${row[col]}"`);
+          break;
+        }
       }
+      if (vpRowIndex !== -1) break;
     }
     
     if (vpRowIndex === -1) {
-      console.error(`❌ [${config.ticker}] Rótulo "${config.rowLabel}" não encontrado`);
+      console.error(`❌ [${config.ticker}] Rótulo "${config.rowLabel}" não encontrado em nenhuma coluna`);
       fs.unlinkSync(tempFile);
       await context.close();
       await browser.close();
       return null;
     }
     
-    // Pegar última coluna com valor
+    // 7. Pegar última coluna com valor (após a coluna do rótulo)
     const vpRow = data[vpRowIndex];
     let lastColumnIndex = -1;
-    for (let j = vpRow.length - 1; j >= 1; j--) {
-      if (vpRow[j] !== undefined && vpRow[j] !== null && vpRow[j] !== '') {
+    
+    for (let j = vpRow.length - 1; j > vpLabelColumnIndex; j--) {
+      if (vpRow[j] !== undefined && vpRow[j] !== null && vpRow[j] !== '' && vpRow[j] !== 0) {
         lastColumnIndex = j;
         break;
       }
     }
     
     if (lastColumnIndex === -1) {
-      console.error(`❌ [${config.ticker}] Nenhuma coluna com valor encontrada`);
+      console.error(`❌ [${config.ticker}] Nenhuma coluna com valor encontrada após o rótulo`);
       fs.unlinkSync(tempFile);
       await context.close();
       await browser.close();
@@ -183,9 +190,9 @@ async function extractViaExcel(url, config) {
     }
     
     const vpValue = vpRow[lastColumnIndex];
-    console.log(`📊 [${config.ticker}] VP bruto: ${vpValue} (coluna ${lastColumnIndex})`);
+    console.log(`📊 [${config.ticker}] VP bruto: ${vpValue} (coluna índice ${lastColumnIndex})`);
     
-    // Converter para número
+    // 8. Converter para número
     let vpNumber = typeof vpValue === 'string' ? parseFloat(vpValue.replace(',', '.')) : parseFloat(vpValue);
     
     if (isNaN(vpNumber)) {
@@ -198,6 +205,7 @@ async function extractViaExcel(url, config) {
     
     console.log(`✅ [${config.ticker}] VP convertido: ${vpNumber}`);
     
+    // 9. Limpeza
     fs.unlinkSync(tempFile);
     await context.close();
     await browser.close();

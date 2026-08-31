@@ -19,12 +19,11 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Instalar dependências e Navegador
-        run: |
-          npm install
-          npm install xlsx puppeteer firebase
-          # ESTA É A LINHA MÁGICA QUE FALTAVA:
-          npx puppeteer browsers install firefox
+      - name: Instalar dependências
+        run: npm install
+
+      - name: Instalar navegadores do Playwright (inclui Firefox e dependências do sistema)
+        run: npx playwright install firefox
 
       - name: Rodar script de atualização
         env:

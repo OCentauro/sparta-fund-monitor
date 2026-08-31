@@ -1,10 +1,10 @@
 /*
   Robô de Atualização de Fundamentos (Cota Patrimonial)
-  Usa Puppeteer com Firefox para baixar planilhas Excel.
+  Usa Playwright com Firefox para baixar planilhas Excel de forma robusta.
 */
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
-import puppeteer from "puppeteer";
+import { firefox } from "playwright";
 import * as XLSX from "xlsx";
 import fs from "fs";
 import path from "path";
@@ -65,72 +65,43 @@ async function extractViaRegex(url, ticker) {
 
 async function extractViaExcel(url, config) {
   let browser = null;
-    try {
-    console.log(`🦊 [${config.ticker}] Iniciando Firefox...`);
+  try {
+    console.log(`🦊 [${config.ticker}] Iniciando Firefox via Playwright...`);
     
-    browser = await puppeteer.launch({
-      product: 'firefox',
+    browser = await firefox.launch({ 
       headless: true,
-      args: ['--no-sandbox', '--disable-dev-shm-usage'], // <-- A VÍRGULA NO FINAL DESTA LINHA É OBRIGATÓRIA
-      // Garante que o Puppeteer use a versão que acabamos de instalar
-      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH 
+      firefoxUserPrefs: {
+        // Configurações para permitir download automático sem perguntar
+        "browser.download.folderList": 2,
+        "browser.download.dir": "/tmp",
+        "browser.helperApps.neverAsk.saveToDisk": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
+      }
     });
-    
-    console.log(`🌐 [${config.ticker}] Navegador iniciado. Abrindo página...`);
     
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0');
     
-    await page.goto(url, { 
-      waitUntil: 'domcontentloaded', 
-      timeout: 20000 
-    });
+    console.log(`🌐 [${config.ticker}] Navegando para ${url}...`);
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Aguarda renderização
     
-    console.log(`🔍 [${config.ticker}] Página carregada. Procurando documento...`);
-    await new Promise(resolve => setTimeout(resolve, 3000));
+    console.log(`🔍 [${config.ticker}] Procurando documento: "${config.documentName}"...`);
     
-    const link = await page.evaluate((docName) => {
-      const links = Array.from(document.querySelectorAll('a'));
-      const found = links.find(a => 
-        a.textContent && a.textContent.toLowerCase().includes(docName.toLowerCase())
-      );
-      return found ? found.href : null;
-    }, config.documentName);
+    // Prepara para capturar o download
+    const downloadPromise = page.waitForEvent('download', { timeout: 15000 });
     
-    if (!link) {
-      console.error(`❌ [${config.ticker}] Documento "${config.documentName}" não encontrado`);
-      return null;
-    }
-    
-    console.log(`🔗 [${config.ticker}] Link encontrado`);
-    
-    const downloadPath = '/tmp';
-    await page._client().send('Page.setDownloadBehavior', {
-      behavior: 'allow',
-      downloadPath: downloadPath
-    });
+    // Clica no link que contém o nome do documento
+    await page.locator(`a:has-text("${config.documentName}")`).first().click();
     
     console.log(`⬇️ [${config.ticker}] Iniciando download...`);
-    await page.goto(link, { 
-      waitUntil: 'networkidle0', 
-      timeout: 15000 
-    });
+    const download = await downloadPromise;
     
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    const tempFile = `/tmp/${config.ticker}_fundamentos.xlsx`;
+    await download.saveAs(tempFile);
+    console.log(`✅ [${config.ticker}] Arquivo salvo em: ${tempFile}`);
     
-    const files = fs.readdirSync(downloadPath);
-    const xlsxFile = files.find(f => f.endsWith('.xlsx') || f.endsWith('.xls'));
-    
-    if (!xlsxFile) {
-      console.error(`❌ [${config.ticker}] Nenhum arquivo Excel encontrado no download`);
-      console.log(`📂 Arquivos em ${downloadPath}:`, files.join(', '));
-      return null;
-    }
-    
-    const tempFile = path.join(downloadPath, xlsxFile);
-    console.log(`✅ [${config.ticker}] Arquivo baixado: ${xlsxFile}`);
-    
-    console.log(`📖 [${config.ticker}] Lendo planilha...`);
+    // Ler o Excel
+    console.log(`📖 [${config.ticker}] Lendo planilha "${config.sheetName}"...`);
     const workbook = XLSX.readFile(tempFile);
     
     if (!workbook.Sheets[config.sheetName]) {
@@ -142,9 +113,9 @@ async function extractViaExcel(url, config) {
     
     const sheet = workbook.Sheets[config.sheetName];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-    
     console.log(`📋 [${config.ticker}] Planilha tem ${data.length} linhas`);
     
+    // Encontrar linha do VP
     let vpRowIndex = -1;
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
@@ -161,9 +132,9 @@ async function extractViaExcel(url, config) {
       return null;
     }
     
+    // Pegar última coluna com valor
     const vpRow = data[vpRowIndex];
     let lastColumnIndex = -1;
-    
     for (let j = vpRow.length - 1; j >= 1; j--) {
       if (vpRow[j] !== undefined && vpRow[j] !== null && vpRow[j] !== '') {
         lastColumnIndex = j;
@@ -180,12 +151,8 @@ async function extractViaExcel(url, config) {
     const vpValue = vpRow[lastColumnIndex];
     console.log(`📊 [${config.ticker}] VP bruto: ${vpValue} (coluna ${lastColumnIndex})`);
     
-    let vpNumber;
-    if (typeof vpValue === 'string') {
-      vpNumber = parseFloat(vpValue.replace(',', '.'));
-    } else {
-      vpNumber = parseFloat(vpValue);
-    }
+    // Converter para número
+    let vpNumber = typeof vpValue === 'string' ? parseFloat(vpValue.replace(',', '.')) : parseFloat(vpValue);
     
     if (isNaN(vpNumber)) {
       console.error(`❌ [${config.ticker}] VP não é número válido: ${vpValue}`);

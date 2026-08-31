@@ -1,6 +1,6 @@
 /*
   Robô de Atualização de Fundamentos (Cota Patrimonial)
-  Usa Playwright com Firefox para baixar planilhas Excel de forma robusta via page.request.
+  v1.3.0 - Playwright + Excel + Debug avançado
 */
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
@@ -41,34 +41,62 @@ async function extractViaRegex(url, ticker) {
     
     const response = await fetch(url, {
       headers: { 
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
       }
     });
 
     if (!response.ok) {
-      console.error(`❌ [${ticker}] Erro HTTP: ${response.status} ${response.statusText}`);
+      console.error(`❌ [${ticker}] Erro HTTP: ${response.status}`);
       return null;
     }
 
     const html = await response.text();
     console.log(`📄 [${ticker}] HTML recebido: ${html.length} caracteres`);
 
-    // CORREÇÃO: Regex que NÃO exige "R$" - captura o primeiro número com vírgula após "Cota Patrimonial"
-    const regex = /cota\s+patrimonial[\s\S]{0,300}(\d{1,3}[.,]\d{2})/i;
-    const match = html.match(regex);
+    // DEBUG COMPLETO: Mostrar todas as ocorrências de "cota"
+    console.log(`\n🔍 [${ticker}] === DEBUG: Procurando "cota" no HTML ===`);
+    
+    // Encontrar todas as ocorrências de "cota" (case insensitive)
+    const cotaRegex = /cota/gi;
+    let match;
+    let occurrences = [];
+    
+    while ((match = cotaRegex.exec(html)) !== null) {
+      const start = Math.max(0, match.index - 50);
+      const end = Math.min(html.length, match.index + 250);
+      const context = html.substring(start, end).replace(/\s+/g, ' ').trim();
+      occurrences.push(context);
+    }
+    
+    console.log(` [${ticker}] Encontradas ${occurrences.length} ocorrências de "cota":`);
+    occurrences.slice(0, 8).forEach((ctx, i) => {
+      console.log(`   [${i+1}] ...${ctx}...`);
+    });
+    console.log(`🔍 [${ticker}] === FIM DEBUG ===\n`);
 
-    if (match && match[1]) {
-      const val = parseFloat(match[1].replace(",", "."));
-      console.log(`✅ [${ticker}] Regex encontrou com sucesso: ${val}`);
-      return val;
+    // Tentar múltiplas variações de regex
+    const regexPatterns = [
+      /cota\s+patrimonial[\s\S]{0,500}(\d{1,3}[.,]\d{2})/i,
+      /cota\s+patrimonial[^0-9]{0,100}(\d{1,3}[.,]\d{2})/i,
+      /patrimonial[\s\S]{0,300}(\d{1,3}[.,]\d{2})/i,
+      /cota[^0-9]{0,200}(\d{1,3}[.,]\d{2})/i
+    ];
+
+    for (let i = 0; i < regexPatterns.length; i++) {
+      const match = html.match(regexPatterns[i]);
+      if (match && match[1]) {
+        const val = parseFloat(match[1].replace(",", "."));
+        console.log(`✅ [${ticker}] Pattern ${i+1} encontrou: ${val}`);
+        return val;
+      }
     }
 
-    console.log(`⚠️ [${ticker}] Regex NÃO encontrou o padrão no HTML.`);
+    console.log(`️ [${ticker}] Nenhum pattern encontrou o valor.`);
     return null;
 
   } catch (error) {
-    console.error(`❌ [${ticker}] Exceção durante o fetch:`, error.message);
+    console.error(`❌ [${ticker}] Exceção:`, error.message);
     return null;
   }
 }
@@ -97,30 +125,26 @@ async function extractViaExcel(url, config) {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    console.log(` [${config.ticker}] Procurando documento: "${config.documentName}"...`);
+    console.log(`🔍 [${config.ticker}] Procurando documento: "${config.documentName}"...`);
     
     const linkElement = await page.locator(`a:has-text("${config.documentName}")`).first();
     const count = await linkElement.count();
     
     if (count === 0) {
-      console.error(`❌ [${config.ticker}] Link com texto "${config.documentName}" não encontrado.`);
-      const links = await page.locator('a').all();
-      const linkTexts = await Promise.all(links.slice(0, 15).map(async l => await l.textContent()));
-      console.log(`🔗 Links encontrados na página:`, linkTexts.filter(t => t && t.trim() !== ''));
-      
+      console.error(`❌ [${config.ticker}] Link não encontrado.`);
       await context.close();
       await browser.close();
       return null;
     }
 
     const href = await linkElement.getAttribute('href');
-    console.log(`🔗 [${config.ticker}] URL do documento encontrada: ${href}`);
+    console.log(` [${config.ticker}] URL: ${href}`);
 
-    console.log(`⬇️ [${config.ticker}] Baixando arquivo via request...`);
+    console.log(`⬇️ [${config.ticker}] Baixando...`);
     const response = await page.request.get(href, { timeout: 15000 });
     
     if (!response.ok()) {
-      console.error(`❌ [${config.ticker}] Falha ao baixar: HTTP ${response.status()}`);
+      console.error(`❌ [${config.ticker}] Falha: HTTP ${response.status()}`);
       await context.close();
       await browser.close();
       return null;
@@ -129,15 +153,14 @@ async function extractViaExcel(url, config) {
     const buffer = await response.body();
     const tempFile = `/tmp/${config.ticker}_fundamentos.xlsx`;
     fs.writeFileSync(tempFile, buffer);
-    console.log(`✅ [${config.ticker}] Arquivo salvo em: ${tempFile} (${buffer.length} bytes)`);
+    console.log(`✅ [${config.ticker}] Salvo: ${tempFile} (${buffer.length} bytes)`);
     
-    console.log(` [${config.ticker}] Lendo planilha "${config.sheetName}"...`);
+    console.log(`📖 [${config.ticker}] Lendo "${config.sheetName}"...`);
     const fileBuffer = fs.readFileSync(tempFile);
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
     
     if (!workbook.Sheets[config.sheetName]) {
-      console.error(`❌ [${config.ticker}] Aba "${config.sheetName}" não encontrada`);
-      console.log(` Abas disponíveis:`, Object.keys(workbook.Sheets).join(', '));
+      console.error(`❌ [${config.ticker}] Aba não encontrada`);
       fs.unlinkSync(tempFile);
       await context.close();
       await browser.close();
@@ -146,7 +169,7 @@ async function extractViaExcel(url, config) {
     
     const sheet = workbook.Sheets[config.sheetName];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-    console.log(`📋 [${config.ticker}] Planilha tem ${data.length} linhas`);
+    console.log(`📋 [${config.ticker}] ${data.length} linhas`);
     
     let vpRowIndex = -1;
     let vpLabelColumnIndex = 0;
@@ -159,8 +182,7 @@ async function extractViaExcel(url, config) {
         if (row[col] && row[col].toString().toLowerCase().includes(config.rowLabel.toLowerCase())) {
           vpRowIndex = i;
           vpLabelColumnIndex = col;
-          console.log(`✅ [${config.ticker}] Linha do VP encontrada: índice ${i}, coluna do rótulo: ${col}`);
-          console.log(`   Texto encontrado: "${row[col]}"`);
+          console.log(`✅ [${config.ticker}] VP: linha ${i}, coluna ${col}`);
           break;
         }
       }
@@ -168,7 +190,7 @@ async function extractViaExcel(url, config) {
     }
     
     if (vpRowIndex === -1) {
-      console.error(`❌ [${config.ticker}] Rótulo "${config.rowLabel}" não encontrado em nenhuma coluna`);
+      console.error(`❌ [${config.ticker}] Rótulo não encontrado`);
       fs.unlinkSync(tempFile);
       await context.close();
       await browser.close();
@@ -186,7 +208,7 @@ async function extractViaExcel(url, config) {
     }
     
     if (lastColumnIndex === -1) {
-      console.error(`❌ [${config.ticker}] Nenhuma coluna com valor encontrada após o rótulo`);
+      console.error(`❌ [${config.ticker}] Sem valor`);
       fs.unlinkSync(tempFile);
       await context.close();
       await browser.close();
@@ -194,19 +216,19 @@ async function extractViaExcel(url, config) {
     }
     
     const vpValue = vpRow[lastColumnIndex];
-    console.log(`📊 [${config.ticker}] VP bruto: ${vpValue} (coluna índice ${lastColumnIndex})`);
+    console.log(` [${config.ticker}] VP bruto: ${vpValue}`);
     
     let vpNumber = typeof vpValue === 'string' ? parseFloat(vpValue.replace(',', '.')) : parseFloat(vpValue);
     
     if (isNaN(vpNumber)) {
-      console.error(`❌ [${config.ticker}] VP não é número válido: ${vpValue}`);
+      console.error(` [${config.ticker}] VP inválido: ${vpValue}`);
       fs.unlinkSync(tempFile);
       await context.close();
       await browser.close();
       return null;
     }
     
-    console.log(`✅ [${config.ticker}] VP convertido: ${vpNumber}`);
+    console.log(`✅ [${config.ticker}] VP: ${vpNumber}`);
     
     fs.unlinkSync(tempFile);
     await context.close();
@@ -215,20 +237,20 @@ async function extractViaExcel(url, config) {
     return vpNumber;
     
   } catch (error) {
-    console.error(`❌ [${config.ticker}] Erro crítico:`, error.message);
+    console.error(` [${config.ticker}] Erro:`, error.message);
     if (browser) await browser.close();
     return null;
   }
 }
 
 async function runUpdate() {
-  console.log("🚀 Iniciando atualização de fundamentos...");
+  console.log(" Iniciando atualização v1.3.0...");
   const today = new Date().toISOString().split('T')[0];
   let successCount = 0;
 
   for (const fund of FUNDS_CONFIG) {
     console.log(`\n${'='.repeat(60)}`);
-    console.log(` Processando ${fund.ticker}...`);
+    console.log(`🔄 Processando ${fund.ticker}...`);
     console.log(`${'='.repeat(60)}`);
     
     const docRef = doc(db, "fundamentals", fund.ticker);
@@ -262,7 +284,7 @@ async function runUpdate() {
   }
 
   console.log(`\n${'='.repeat(60)}`);
-  console.log(` Processo finalizado. ${successCount}/${FUNDS_CONFIG.length} fundos atualizados.`);
+  console.log(`🏁 Finalizado. ${successCount}/${FUNDS_CONFIG.length} fundos atualizados.`);
   console.log(`${'='.repeat(60)}`);
 }
 

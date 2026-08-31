@@ -1,13 +1,12 @@
 /*
   Robô de Atualização de Fundamentos (Cota Patrimonial)
-  Usa Playwright com Firefox para baixar planilhas Excel de forma robusta.
+  Usa Playwright com Firefox para baixar planilhas Excel de forma robusta via page.request.
 */
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
 import { firefox } from "playwright";
 import * as XLSX from "xlsx";
 import fs from "fs";
-import path from "path";
 
 const firebaseConfig = {
   apiKey: process.env.FIREBASE_API_KEY,
@@ -77,7 +76,6 @@ async function extractViaExcel(url, config) {
       }
     });
     
-    // CORREÇÃO: No Playwright, o userAgent é definido no Contexto, não na Page
     const context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0'
     });
@@ -90,20 +88,44 @@ async function extractViaExcel(url, config) {
     
     console.log(`🔍 [${config.ticker}] Procurando documento: "${config.documentName}"...`);
     
-    // Prepara para capturar o download antes de clicar
-    const downloadPromise = page.waitForEvent('download', { timeout: 15000 });
+    // 1. Encontrar o elemento do link
+    const linkElement = await page.locator(`a:has-text("${config.documentName}")`).first();
+    const count = await linkElement.count();
     
-    // Clica no link que contém o nome do documento
-    await page.locator(`a:has-text("${config.documentName}")`).first().click();
+    if (count === 0) {
+      console.error(`❌ [${config.ticker}] Link com texto "${config.documentName}" não encontrado.`);
+      // Debug: listar alguns links para entender o que há na página
+      const links = await page.locator('a').all();
+      const linkTexts = await Promise.all(links.slice(0, 15).map(async l => await l.textContent()));
+      console.log(`🔗 Links encontrados na página:`, linkTexts.filter(t => t.trim() !== ''));
+      
+      await context.close();
+      await browser.close();
+      return null;
+    }
+
+    // 2. Pegar o href do link
+    const href = await linkElement.getAttribute('href');
+    console.log(`🔗 [${config.ticker}] URL do documento encontrada: ${href}`);
+
+    // 3. Usar o request do contexto do Playwright para baixar o arquivo (MUITO mais robusto)
+    console.log(`⬇️ [${config.ticker}] Baixando arquivo via request...`);
+    const response = await page.request.get(href, { timeout: 15000 });
     
-    console.log(`⬇️ [${config.ticker}] Iniciando download...`);
-    const download = await downloadPromise;
-    
+    if (!response.ok()) {
+      console.error(`❌ [${config.ticker}] Falha ao baixar: HTTP ${response.status()}`);
+      await context.close();
+      await browser.close();
+      return null;
+    }
+
+    // 4. Salvar o buffer diretamente no arquivo
+    const buffer = await response.body();
     const tempFile = `/tmp/${config.ticker}_fundamentos.xlsx`;
-    await download.saveAs(tempFile);
-    console.log(`✅ [${config.ticker}] Arquivo salvo em: ${tempFile}`);
+    fs.writeFileSync(tempFile, buffer);
+    console.log(`✅ [${config.ticker}] Arquivo salvo em: ${tempFile} (${buffer.length} bytes)`);
     
-    // Ler o Excel
+    // 5. Ler o Excel
     console.log(`📖 [${config.ticker}] Lendo planilha "${config.sheetName}"...`);
     const workbook = XLSX.readFile(tempFile);
     

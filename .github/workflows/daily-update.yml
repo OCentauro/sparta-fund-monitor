@@ -19,15 +19,12 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Instalar dependências
+      - name: Instalar dependências e Navegador
         run: |
           npm install
           npm install xlsx puppeteer firebase
-
-      - name: Instalar Firefox
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y firefox
+          # ESTA É A LINHA MÁGICA QUE FALTAVA:
+          npx puppeteer browsers install firefox
 
       - name: Rodar script de atualização
         env:

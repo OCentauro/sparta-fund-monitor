@@ -65,13 +65,15 @@ async function extractViaRegex(url, ticker) {
 
 async function extractViaExcel(url, config) {
   let browser = null;
-  try {
+    try {
     console.log(`🦊 [${config.ticker}] Iniciando Firefox...`);
     
     browser = await puppeteer.launch({
       product: 'firefox',
       headless: true,
-      args: ['--no-sandbox', '--disable-dev-shm-usage']
+      args: ['--no-sandbox', '--disable-dev-shm-usage'], // <-- A VÍRGULA NO FINAL DESTA LINHA É OBRIGATÓRIA
+      // Garante que o Puppeteer use a versão que acabamos de instalar
+      executablePath: process.env.PUPPETEER_EXECUTABLE_PATH 
     });
     
     console.log(`🌐 [${config.ticker}] Navegador iniciado. Abrindo página...`);

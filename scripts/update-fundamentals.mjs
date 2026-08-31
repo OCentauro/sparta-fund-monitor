@@ -66,10 +66,10 @@ async function extractViaRegex(url, ticker) {
 async function extractViaExcel(url, config) {
   let browser = null;
   try {
-    console.log(` [${config.ticker}] Iniciando Firefox...`);
+    console.log(`🦊 [${config.ticker}] Iniciando Firefox...`);
     
     browser = await puppeteer.launch({
-      product: 'firefox', // ← USANDO FIREFOX!
+      product: 'firefox',
       headless: true,
       args: ['--no-sandbox', '--disable-dev-shm-usage']
     });
@@ -79,16 +79,14 @@ async function extractViaExcel(url, config) {
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0');
     
-    // Navegar para a página
     await page.goto(url, { 
       waitUntil: 'domcontentloaded', 
       timeout: 20000 
     });
     
-    console.log(` [${config.ticker}] Página carregada. Procurando documento...`);
+    console.log(`🔍 [${config.ticker}] Página carregada. Procurando documento...`);
     await new Promise(resolve => setTimeout(resolve, 3000));
     
-    // Encontrar o link
     const link = await page.evaluate((docName) => {
       const links = Array.from(document.querySelectorAll('a'));
       const found = links.find(a => 
@@ -102,17 +100,15 @@ async function extractViaExcel(url, config) {
       return null;
     }
     
-    console.log(` [${config.ticker}] Link encontrado`);
+    console.log(`🔗 [${config.ticker}] Link encontrado`);
     
-    // Configurar para aceitar downloads
     const downloadPath = '/tmp';
     await page._client().send('Page.setDownloadBehavior', {
       behavior: 'allow',
       downloadPath: downloadPath
     });
     
-    // Clicar no link de download
-    console.log(` [${config.ticker}] Iniciando download...`);
+    console.log(`⬇️ [${config.ticker}] Iniciando download...`);
     await page.goto(link, { 
       waitUntil: 'networkidle0', 
       timeout: 15000 
@@ -120,21 +116,19 @@ async function extractViaExcel(url, config) {
     
     await new Promise(resolve => setTimeout(resolve, 5000));
     
-    // Procurar arquivo baixado
     const files = fs.readdirSync(downloadPath);
     const xlsxFile = files.find(f => f.endsWith('.xlsx') || f.endsWith('.xls'));
     
     if (!xlsxFile) {
       console.error(`❌ [${config.ticker}] Nenhum arquivo Excel encontrado no download`);
-      console.log(` Arquivos em ${downloadPath}:`, files.join(', '));
+      console.log(`📂 Arquivos em ${downloadPath}:`, files.join(', '));
       return null;
     }
     
     const tempFile = path.join(downloadPath, xlsxFile);
     console.log(`✅ [${config.ticker}] Arquivo baixado: ${xlsxFile}`);
     
-    // Ler o Excel
-    console.log(` [${config.ticker}] Lendo planilha...`);
+    console.log(`📖 [${config.ticker}] Lendo planilha...`);
     const workbook = XLSX.readFile(tempFile);
     
     if (!workbook.Sheets[config.sheetName]) {
@@ -147,9 +141,8 @@ async function extractViaExcel(url, config) {
     const sheet = workbook.Sheets[config.sheetName];
     const data = XLSX.utils.sheet_to_json(sheet, { header: 1 });
     
-    console.log(` [${config.ticker}] Planilha tem ${data.length} linhas`);
+    console.log(`📋 [${config.ticker}] Planilha tem ${data.length} linhas`);
     
-    // Encontrar linha do VP
     let vpRowIndex = -1;
     for (let i = 0; i < data.length; i++) {
       const row = data[i];
@@ -161,4 +154,103 @@ async function extractViaExcel(url, config) {
     }
     
     if (vpRowIndex === -1) {
-      console.error(`❌ [${config.ticker}] Rótulo "${config.rowLabel}" não encontrado`
+      console.error(`❌ [${config.ticker}] Rótulo "${config.rowLabel}" não encontrado`);
+      fs.unlinkSync(tempFile);
+      return null;
+    }
+    
+    const vpRow = data[vpRowIndex];
+    let lastColumnIndex = -1;
+    
+    for (let j = vpRow.length - 1; j >= 1; j--) {
+      if (vpRow[j] !== undefined && vpRow[j] !== null && vpRow[j] !== '') {
+        lastColumnIndex = j;
+        break;
+      }
+    }
+    
+    if (lastColumnIndex === -1) {
+      console.error(`❌ [${config.ticker}] Nenhuma coluna com valor encontrada`);
+      fs.unlinkSync(tempFile);
+      return null;
+    }
+    
+    const vpValue = vpRow[lastColumnIndex];
+    console.log(`📊 [${config.ticker}] VP bruto: ${vpValue} (coluna ${lastColumnIndex})`);
+    
+    let vpNumber;
+    if (typeof vpValue === 'string') {
+      vpNumber = parseFloat(vpValue.replace(',', '.'));
+    } else {
+      vpNumber = parseFloat(vpValue);
+    }
+    
+    if (isNaN(vpNumber)) {
+      console.error(`❌ [${config.ticker}] VP não é número válido: ${vpValue}`);
+      fs.unlinkSync(tempFile);
+      return null;
+    }
+    
+    console.log(`✅ [${config.ticker}] VP convertido: ${vpNumber}`);
+    
+    fs.unlinkSync(tempFile);
+    await browser.close();
+    
+    return vpNumber;
+    
+  } catch (error) {
+    console.error(`❌ [${config.ticker}] Erro crítico:`, error.message);
+    if (browser) await browser.close();
+    return null;
+  }
+}
+
+async function runUpdate() {
+  console.log("🚀 Iniciando atualização de fundamentos...");
+  const today = new Date().toISOString().split('T')[0];
+  let successCount = 0;
+
+  for (const fund of FUNDS_CONFIG) {
+    console.log(`\n${'='.repeat(60)}`);
+    console.log(`🔄 Processando ${fund.ticker}...`);
+    console.log(`${'='.repeat(60)}`);
+    
+    const docRef = doc(db, "fundamentals", fund.ticker);
+    const docSnap = await getDoc(docRef);
+    const currentData = docSnap.exists() ? docSnap.data() : {};
+
+    let newCota = null;
+    
+    if (fund.type === 'excel') {
+      newCota = await extractViaExcel(fund.url, fund);
+    } else {
+      newCota = await extractViaRegex(fund.url, fund.ticker);
+    }
+
+    if (newCota !== null && !isNaN(newCota)) {
+      if (currentData.vp !== newCota) {
+        await setDoc(docRef, {
+          ...currentData,
+          vp: newCota,
+          updated: today,
+          updatedAt: new Date()
+        }, { merge: true });
+        console.log(`✅ ${fund.ticker} ATUALIZADO: R$ ${newCota.toFixed(2)}`);
+        successCount++;
+      } else {
+        console.log(`⏸️ ${fund.ticker} inalterado (R$ ${newCota.toFixed(2)})`);
+      }
+    } else {
+      console.log(`⚠️ ${fund.ticker}: Falha na extração.`);
+    }
+  }
+
+  console.log(`\n${'='.repeat(60)}`);
+  console.log(`🏁 Processo finalizado. ${successCount}/${FUNDS_CONFIG.length} fundos atualizados.`);
+  console.log(`${'='.repeat(60)}`);
+}
+
+runUpdate().catch(err => {
+  console.error("💥 Erro fatal:", err);
+  process.exit(1);
+});

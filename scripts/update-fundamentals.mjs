@@ -127,7 +127,10 @@ async function extractViaExcel(url, config) {
     
     // 5. Ler o Excel
     console.log(`📖 [${config.ticker}] Lendo planilha "${config.sheetName}"...`);
-    const workbook = XLSX.readFile(tempFile);
+    //const workbook = XLSX.readFile(tempFile);  PODE APAGAR
+    // CORREÇÃO: Ler como buffer e usar XLSX.read()
+    const fileBuffer = fs.readFileSync(tempFile);
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
     
     if (!workbook.Sheets[config.sheetName]) {
       console.error(`❌ [${config.ticker}] Aba "${config.sheetName}" não encontrada`);

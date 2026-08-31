@@ -71,15 +71,18 @@ async function extractViaExcel(url, config) {
     browser = await firefox.launch({ 
       headless: true,
       firefoxUserPrefs: {
-        // Configurações para permitir download automático sem perguntar
         "browser.download.folderList": 2,
         "browser.download.dir": "/tmp",
         "browser.helperApps.neverAsk.saveToDisk": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
       }
     });
     
-    const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0');
+    // CORREÇÃO: No Playwright, o userAgent é definido no Contexto, não na Page
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0'
+    });
+    
+    const page = await context.newPage();
     
     console.log(`🌐 [${config.ticker}] Navegando para ${url}...`);
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
@@ -87,7 +90,7 @@ async function extractViaExcel(url, config) {
     
     console.log(`🔍 [${config.ticker}] Procurando documento: "${config.documentName}"...`);
     
-    // Prepara para capturar o download
+    // Prepara para capturar o download antes de clicar
     const downloadPromise = page.waitForEvent('download', { timeout: 15000 });
     
     // Clica no link que contém o nome do documento
@@ -108,6 +111,8 @@ async function extractViaExcel(url, config) {
       console.error(`❌ [${config.ticker}] Aba "${config.sheetName}" não encontrada`);
       console.log(`📋 Abas disponíveis:`, Object.keys(workbook.Sheets).join(', '));
       fs.unlinkSync(tempFile);
+      await context.close();
+      await browser.close();
       return null;
     }
     
@@ -129,6 +134,8 @@ async function extractViaExcel(url, config) {
     if (vpRowIndex === -1) {
       console.error(`❌ [${config.ticker}] Rótulo "${config.rowLabel}" não encontrado`);
       fs.unlinkSync(tempFile);
+      await context.close();
+      await browser.close();
       return null;
     }
     
@@ -145,6 +152,8 @@ async function extractViaExcel(url, config) {
     if (lastColumnIndex === -1) {
       console.error(`❌ [${config.ticker}] Nenhuma coluna com valor encontrada`);
       fs.unlinkSync(tempFile);
+      await context.close();
+      await browser.close();
       return null;
     }
     
@@ -157,12 +166,15 @@ async function extractViaExcel(url, config) {
     if (isNaN(vpNumber)) {
       console.error(`❌ [${config.ticker}] VP não é número válido: ${vpValue}`);
       fs.unlinkSync(tempFile);
+      await context.close();
+      await browser.close();
       return null;
     }
     
     console.log(`✅ [${config.ticker}] VP convertido: ${vpNumber}`);
     
     fs.unlinkSync(tempFile);
+    await context.close();
     await browser.close();
     
     return vpNumber;

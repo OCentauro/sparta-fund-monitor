@@ -19,7 +19,9 @@ jobs:
           node-version: '20'
 
       - name: Instalar dependências
-        run: npm install
+        run: |
+          npm install
+          npm install xlsx puppeteer firebase
 
       - name: Instalar dependências do sistema para Puppeteer
         run: |

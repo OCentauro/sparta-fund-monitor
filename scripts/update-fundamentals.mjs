@@ -1,6 +1,6 @@
 /*
   Robô de Atualização de Fundamentos (Cota Patrimonial)
-  v1.4.0 - Unificado com Playwright (resolve JS rendering e Cloudflare) + Cache otimizado
+  v1.4.1 - Raio-X do HTML renderizado + Regex de longo alcance
 */
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
@@ -57,21 +57,25 @@ async function extractFundData(fund) {
     
     if (fund.type === 'sparta') {
       console.log(`🌐 [${fund.ticker}] Navegando e aguardando renderização JS...`);
-      // 'networkidle' garante que o JavaScript (DataTables) terminou de montar a tabela
       await page.goto(fund.url, { waitUntil: 'networkidle', timeout: 30000 });
       
-      // Pega o HTML COMPLETO após o JavaScript rodar
       const html = await page.content();
       
-      // Regex: Procura "Cota Patrimonial" e pega o próximo número com 2 a 3 dígitos
-      const regex = /Cota\s+Patrimonial[\s\S]{0,500}?(\d{2,3}[.,]\d{2})/gi;
+      // 🔍 RAIO-X: Imprime o trecho exato do HTML onde aparece "Cota Patrimonial"
+      const debugIdx = html.toLowerCase().indexOf('cota patrimonial');
+      if (debugIdx !== -1) {
+        console.log(`🔍 [${fund.ticker}] RAIO-X DO HTML: ...${html.substring(debugIdx, debugIdx + 600)}...`);
+      } else {
+        console.log(`⚠️ [${fund.ticker}] Texto "Cota Patrimonial" não encontrado no HTML renderizado!`);
+      }
+
+      // Regex de longo alcance (2000 caracteres) para pular tags HTML complexas
+      const regex = /cota\s+patrimonial[\s\S]{0,2000}?(\d{2,3}[.,]\d{2})/gi;
       const matches = [...html.matchAll(regex)];
       
-      // Filtra para pegar apenas valores que fazem sentido para Cota Patrimonial (>= 50)
-      // Isso descarta dividendos (ex: 1,25) ou outras métricas pequenas
       const validMatches = matches.filter(m => {
         const val = parseFloat(m[1].replace(',', '.'));
-        return val >= 50;
+        return val >= 50; // Filtra dividendos e outros números pequenos
       });
 
       if (validMatches.length > 0) {
@@ -80,11 +84,11 @@ async function extractFundData(fund) {
         return val;
       }
       
-      console.log(`⚠️ [${fund.ticker}] Não foi possível encontrar o valor no HTML renderizado.`);
+      console.log(`⚠️ [${fund.ticker}] Nenhum valor válido (>= 50) encontrado após "Cota Patrimonial".`);
       return null;
 
     } else if (fund.type === 'excel') {
-      console.log(`🌐 [${fund.ticker}] Navegando para buscar planilha...`);
+      console.log(` [${fund.ticker}] Navegando para buscar planilha...`);
       await page.goto(fund.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await new Promise(resolve => setTimeout(resolve, 2000));
       
@@ -95,7 +99,7 @@ async function extractFundData(fund) {
       }
 
       const href = await linkElement.getAttribute('href');
-      console.log(`⬇️ [${fund.ticker}] Baixando: ${href.substring(0, 60)}...`);
+      console.log(`️ [${fund.ticker}] Baixando...`);
       
       const response = await page.request.get(href, { timeout: 15000 });
       if (!response.ok()) {
@@ -104,13 +108,9 @@ async function extractFundData(fund) {
       }
 
       const buffer = await response.body();
-      const tempFile = `/tmp/${fund.ticker}_fundamentos.xlsx`;
-      fs.writeFileSync(tempFile, buffer);
-      
       const workbook = XLSX.read(buffer, { type: 'buffer' });
       if (!workbook.Sheets[fund.sheetName]) {
-        console.error(`❌ [${fund.ticker}] Aba "${fund.sheetName}" não encontrada.`);
-        fs.unlinkSync(tempFile);
+        console.error(`❌ [${fund.ticker}] Aba não encontrada.`);
         return null;
       }
       
@@ -131,11 +131,7 @@ async function extractFundData(fund) {
         if (vpRowIndex !== -1) break;
       }
       
-      if (vpRowIndex === -1) {
-        console.error(`❌ [${fund.ticker}] Rótulo não encontrado.`);
-        fs.unlinkSync(tempFile);
-        return null;
-      }
+      if (vpRowIndex === -1) return null;
       
       const vpRow = data[vpRowIndex];
       let lastColIndex = -1;
@@ -146,28 +142,19 @@ async function extractFundData(fund) {
         }
       }
       
-      if (lastColIndex === -1) {
-        console.error(`❌ [${fund.ticker}] Sem valor na linha.`);
-        fs.unlinkSync(tempFile);
-        return null;
-      }
+      if (lastColIndex === -1) return null;
       
       const vpValue = vpRow[lastColIndex];
       const vpNumber = typeof vpValue === 'string' ? parseFloat(vpValue.replace(',', '.')) : parseFloat(vpValue);
       
-      if (isNaN(vpNumber)) {
-        console.error(`❌ [${fund.ticker}] VP inválido: ${vpValue}`);
-        fs.unlinkSync(tempFile);
-        return null;
-      }
+      if (isNaN(vpNumber)) return null;
       
       console.log(`✅ [${fund.ticker}] VP extraído: ${vpNumber}`);
-      fs.unlinkSync(tempFile);
       return vpNumber;
     }
     
   } catch (error) {
-    console.error(`❌ [${fund.ticker}] Erro crítico:`, error.message);
+    console.error(` [${fund.ticker}] Erro crítico:`, error.message);
     return null;
   } finally {
     if (browser) await browser.close();
@@ -175,7 +162,7 @@ async function extractFundData(fund) {
 }
 
 async function runUpdate() {
-  console.log("🚀 Iniciando atualização v1.4.0...");
+  console.log("🚀 Iniciando atualização v1.4.1...");
   const today = new Date().toISOString().split('T')[0];
   let successCount = 0;
 

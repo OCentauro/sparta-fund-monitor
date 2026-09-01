@@ -1,6 +1,6 @@
 /*
   Robô de Atualização de Fundamentos (Cota Patrimonial)
-  v1.4.2 - Limpeza de JSON noise para extração precisa
+  v1.5.0 - Abordagem nativa do Playwright (Seletores DOM) + Correção de Timeout
 */
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
@@ -56,38 +56,53 @@ async function extractFundData(fund) {
     const page = await context.newPage();
     
     if (fund.type === 'sparta') {
-      console.log(`🌐 [${fund.ticker}] Navegando e aguardando renderização JS...`);
-      await page.goto(fund.url, { waitUntil: 'networkidle', timeout: 30000 });
+      console.log(`🌐 [${fund.ticker}] Navegando (modo domcontentloaded para evitar timeout)...`);
+      // 'domcontentloaded' é muito mais rápido e não espera scripts infinitos de analytics
+      await page.goto(fund.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
       
-      const html = await page.content();
+      console.log(`🔍 [${fund.ticker}] Aguardando a tabela renderizar...`);
       
-      //  LIMPEZA CIRÚRGICA: Remove o texto quando ele está entre aspas (formato JSON)
-      // Isso elimina o bloco de configuração do DataTables, deixando apenas o texto visível da tela
-      const cleanHtml = html
-        .replace(/"Cota Patrimonial"/gi, '')
-        .replace(/"Cota de Mercado"/gi, '')
-        .replace(/"Última Distribuição"/gi, '');
-
-      // Regex agora só vai encontrar o texto visível na tela
-      const regex = /Cota\s+Patrimonial[\s\S]{0,500}?(\d{2,3}[.,]\d{2})/gi;
-      const matches = [...cleanHtml.matchAll(regex)];
-      
-      const validMatches = matches.filter(m => {
-        const val = parseFloat(m[1].replace(',', '.'));
-        return val >= 50; // Filtro de sanidade: Cota Patrimonial de FII raramente é < 50
-      });
-
-      if (validMatches.length > 0) {
-        const val = parseFloat(validMatches[0][1].replace(',', '.'));
-        console.log(`✅ [${fund.ticker}] Valor extraído com sucesso: ${val}`);
-        return val;
+      // A MÁGICA: Espera o elemento com a classe específica da coluna aparecer no DOM
+      try {
+        await page.waitForSelector('.column-cota-patrimonial', { timeout: 10000 });
+        
+        // Pega o primeiro elemento com essa classe (que é a célula da tabela)
+        const element = page.locator('.column-cota-patrimonial').first();
+        const rawText = await element.innerText();
+        
+        console.log(`📝 [${fund.ticker}] Texto bruto extraído: "${rawText}"`);
+        
+        // Limpa o texto: remove tudo que não for dígito ou vírgula, depois troca vírgula por ponto
+        const cleanText = rawText.replace(/[^\d,]/g, '').replace(',', '.');
+        const val = parseFloat(cleanText);
+        
+        if (!isNaN(val) && val >= 50) {
+          console.log(`✅ [${fund.ticker}] Valor extraído com sucesso via seletor DOM: ${val}`);
+          return val;
+        } else {
+          console.log(`⚠️ [${fund.ticker}] Valor inválido ou muito baixo (< 50): ${val}`);
+        }
+      } catch (selectorError) {
+        console.log(`⚠️ [${fund.ticker}] Não foi possível encontrar o seletor .column-cota-patrimonial. Tentando fallback...`);
+        
+        // Fallback: Se a classe mudar, tenta achar o texto "Cota Patrimonial" e pega o próximo número
+        const html = await page.content();
+        const regex = /Cota\s+Patrimonial[\s\S]{0,300}?(\d{2,3}[.,]\d{2})/i;
+        const match = html.match(regex);
+        if (match && match[1]) {
+          const val = parseFloat(match[1].replace(',', '.'));
+          if (val >= 50) {
+            console.log(`✅ [${fund.ticker}] Valor extraído via fallback regex: ${val}`);
+            return val;
+          }
+        }
       }
       
-      console.log(`️ [${fund.ticker}] Nenhum valor válido encontrado.`);
+      console.log(`⚠️ [${fund.ticker}] Falha na extração.`);
       return null;
 
     } else if (fund.type === 'excel') {
-      console.log(` [${fund.ticker}] Navegando para buscar planilha...`);
+      console.log(`🌐 [${fund.ticker}] Navegando para buscar planilha...`);
       await page.goto(fund.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
       await new Promise(resolve => setTimeout(resolve, 2000));
       
@@ -153,7 +168,7 @@ async function extractFundData(fund) {
     }
     
   } catch (error) {
-    console.error(` [${fund.ticker}] Erro crítico:`, error.message);
+    console.error(`❌ [${fund.ticker}] Erro crítico:`, error.message);
     return null;
   } finally {
     if (browser) await browser.close();
@@ -161,7 +176,7 @@ async function extractFundData(fund) {
 }
 
 async function runUpdate() {
-  console.log("🚀 Iniciando atualização v1.4.2...");
+  console.log("🚀 Iniciando atualização v1.5.0...");
   const today = new Date().toISOString().split('T')[0];
   let successCount = 0;
 
@@ -190,7 +205,7 @@ async function runUpdate() {
         console.log(`⏸️ ${fund.ticker} inalterado (R$ ${newCota.toFixed(2)})`);
       }
     } else {
-      console.log(`️ ${fund.ticker}: Falha na extração.`);
+      console.log(`⚠️ ${fund.ticker}: Falha na extração.`);
     }
   }
 

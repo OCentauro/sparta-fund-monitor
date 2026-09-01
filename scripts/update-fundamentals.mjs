@@ -1,6 +1,6 @@
 /*
   Robô de Atualização de Fundamentos (Cota Patrimonial)
-  v1.3.2 - Regex cirúrgica para HTML visível (ignora JSON config)
+  v1.3.3 - Foco total na classe CSS 'column-cota-patrimonial' para extração infalível
 */
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
@@ -53,30 +53,28 @@ async function extractViaRegex(url, ticker) {
 
     const html = await response.text();
 
-    // PATTERNS CORRIGIDOS:
-    // 1. Procura o texto "Cota Patrimonial" entre tags HTML (ex: <h3>Cota Patrimonial</h3>)
-    // Isso ignora o bloco JSON que tem "name":"Cota Patrimonial"
-    const regexPatterns = [
-      />Cota\s+Patrimonial<[\s\S]{0,150}?(\d{2,3}[.,]\d{2})/i,
-      
-      // 2. Fallback: Procura a classe CSS específica e pega o número dentro de 150 chars
-      /class="[^"]*column-cota-patrimonial[^"]*"[\s\S]{0,150}?(\d{2,3}[.,]\d{2})/i,
-      
-      // 3. Fallback extremo: Procura "Cota Patrimonial" seguido de um número grande (90+)
-      // para evitar pegar dividendos (que são números pequenos como 1,00)
-      /Cota\s+Patrimonial[\s\S]{0,300}?(9\d[.,]\d{2}|1\d{2}[.,]\d{2})/i
-    ];
+    // PATTERNS CIRÚRGICOS:
+    // 1. Procura a classe CSS exata e pega o número dentro da tag de fechamento (ex: <td class="...">101,98</td>)
+    const regex1 = /class="[^"]*column-cota-patrimonial[^"]*"[^>]*>\s*([\d.,]+)\s*<\/(?:td|span|div|p)>/i;
+    
+    // 2. Fallback: Procura a classe CSS e qualquer número nos próximos 100 caracteres
+    const regex2 = /class="[^"]*column-cota-patrimonial[^"]*"[^>]*>[\s\S]{0,100}?(\d{2,3}[.,]\d{2})/i;
+    
+    // 3. Fallback extremo: Procura "Cota Patrimonial" em tags HTML (ignorando JSON) e pega número > 50
+    const regex3 = />Cota\s+Patrimonial<[\s\S]{0,300}?((?:5\d|6\d|7\d|8\d|9\d|1\d{2})[.,]\d{2})/i;
+
+    const regexPatterns = [regex1, regex2, regex3];
 
     for (let i = 0; i < regexPatterns.length; i++) {
       const match = html.match(regexPatterns[i]);
       if (match && match[1]) {
         const val = parseFloat(match[1].replace(",", "."));
-        // Validação de sanidade: Cota Patrimonial de FII geralmente é > 50
-        if (val > 50) {
+        // Validação de sanidade: Cota Patrimonial de FII raramente é < 50
+        if (val >= 50) {
           console.log(`✅ [${ticker}] Pattern ${i+1} encontrou com sucesso: ${val}`);
           return val;
         } else {
-          console.log(`️ [${ticker}] Pattern ${i+1} encontrou ${val}, mas parece baixo (dividendo?). Ignorando.`);
+          console.log(`️ [${ticker}] Pattern ${i+1} encontrou ${val}, mas é < 50 (provável dividendo). Ignorando.`);
         }
       }
     }
@@ -233,7 +231,7 @@ async function extractViaExcel(url, config) {
 }
 
 async function runUpdate() {
-  console.log("🚀 Iniciando atualização v1.3.2...");
+  console.log("🚀 Iniciando atualização v1.3.3...");
   const today = new Date().toISOString().split('T')[0];
   let successCount = 0;
 

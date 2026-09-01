@@ -1,6 +1,6 @@
 /*
   Robô de Atualização de Fundamentos (Cota Patrimonial)
-  v1.3.1 - Correção da Regex para buscar pela classe HTML da tabela
+  v1.3.2 - Regex cirúrgica para HTML visível (ignora JSON config)
 */
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
@@ -53,29 +53,35 @@ async function extractViaRegex(url, ticker) {
 
     const html = await response.text();
 
-    // Padrões de Regex em ordem de prioridade (do mais específico para o mais genérico)
+    // PATTERNS CORRIGIDOS:
+    // 1. Procura o texto "Cota Patrimonial" entre tags HTML (ex: <h3>Cota Patrimonial</h3>)
+    // Isso ignora o bloco JSON que tem "name":"Cota Patrimonial"
     const regexPatterns = [
-      // 1. PROCURA DIRETO NA CÉLULA DA TABELA HTML (À prova de falhas do JS)
-      /<td[^>]*class="[^"]*column-cota-patrimonial[^"]*"[^>]*>\s*([\d.,]+)\s*<\/td>/i,
+      />Cota\s+Patrimonial<[\s\S]{0,150}?(\d{2,3}[.,]\d{2})/i,
       
-      // 2. Fallback: Procura a classe em qualquer tag (span, div, etc) seguida do número
-      /class="[^"]*column-cota-patrimonial[^"]*"[^>]*>\s*([\d.,]+)\s*</i,
+      // 2. Fallback: Procura a classe CSS específica e pega o número dentro de 150 chars
+      /class="[^"]*column-cota-patrimonial[^"]*"[\s\S]{0,150}?(\d{2,3}[.,]\d{2})/i,
       
-      // 3. Fallback extremo: Procura o número após a ÚLTIMA ocorrência de "Cota Patrimonial" 
-      // (ignora o bloco de configuração JS inicial)
-      /cota\s+patrimonial[\s\S]{500,3000}(\d{1,3}[.,]\d{2})/i
+      // 3. Fallback extremo: Procura "Cota Patrimonial" seguido de um número grande (90+)
+      // para evitar pegar dividendos (que são números pequenos como 1,00)
+      /Cota\s+Patrimonial[\s\S]{0,300}?(9\d[.,]\d{2}|1\d{2}[.,]\d{2})/i
     ];
 
     for (let i = 0; i < regexPatterns.length; i++) {
       const match = html.match(regexPatterns[i]);
       if (match && match[1]) {
         const val = parseFloat(match[1].replace(",", "."));
-        console.log(`✅ [${ticker}] Pattern ${i+1} encontrou com sucesso: ${val}`);
-        return val;
+        // Validação de sanidade: Cota Patrimonial de FII geralmente é > 50
+        if (val > 50) {
+          console.log(`✅ [${ticker}] Pattern ${i+1} encontrou com sucesso: ${val}`);
+          return val;
+        } else {
+          console.log(`️ [${ticker}] Pattern ${i+1} encontrou ${val}, mas parece baixo (dividendo?). Ignorando.`);
+        }
       }
     }
 
-    console.log(`⚠️ [${ticker}] Nenhum padrão HTML encontrou o valor.`);
+    console.log(`⚠️ [${ticker}] Nenhum padrão válido encontrou o valor.`);
     return null;
 
   } catch (error) {
@@ -104,7 +110,7 @@ async function extractViaExcel(url, config) {
     
     const page = await context.newPage();
     
-    console.log(`🌐 [${config.ticker}] Navegando para ${url}...`);
+    console.log(` [${config.ticker}] Navegando para ${url}...`);
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
     await new Promise(resolve => setTimeout(resolve, 2000));
     
@@ -143,7 +149,7 @@ async function extractViaExcel(url, config) {
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
     
     if (!workbook.Sheets[config.sheetName]) {
-      console.error(`❌ [${config.ticker}] Aba não encontrada`);
+      console.error(` [${config.ticker}] Aba não encontrada`);
       fs.unlinkSync(tempFile);
       await context.close();
       await browser.close();
@@ -173,7 +179,7 @@ async function extractViaExcel(url, config) {
     }
     
     if (vpRowIndex === -1) {
-      console.error(`❌ [${config.ticker}] Rótulo não encontrado`);
+      console.error(` [${config.ticker}] Rótulo não encontrado`);
       fs.unlinkSync(tempFile);
       await context.close();
       await browser.close();
@@ -227,7 +233,7 @@ async function extractViaExcel(url, config) {
 }
 
 async function runUpdate() {
-  console.log("🚀 Iniciando atualização v1.3.1...");
+  console.log("🚀 Iniciando atualização v1.3.2...");
   const today = new Date().toISOString().split('T')[0];
   let successCount = 0;
 

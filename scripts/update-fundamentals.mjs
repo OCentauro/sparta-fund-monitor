@@ -66,8 +66,15 @@ async function extractFundData(fund) {
       try {
         await page.waitForSelector('.column-cota-patrimonial', { timeout: 10000 });
         
-        // Pega o primeiro elemento com essa classe (que é a célula da tabela)
-        const element = page.locator('.column-cota-patrimonial').first();
+        // A CORREÇÃO: Foca especificamente na tag <td> (célula de dados), ignorando o <th> (cabeçalho)
+        let element = page.locator('td.column-cota-patrimonial').first();
+
+        // Fallback de segurança: Se por algum motivo não achar o <td>, pega o segundo elemento da classe
+        // (O primeiro é o cabeçalho, o segundo é o dado)
+        if (await element.count() === 0) {
+          console.log(`💡 [${fund.ticker}] Fallback: buscando o segundo elemento da classe...`);
+          element = page.locator('.column-cota-patrimonial').nth(1);
+        }
         const rawText = await element.innerText();
         
         console.log(`📝 [${fund.ticker}] Texto bruto extraído: "${rawText}"`);

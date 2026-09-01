@@ -56,30 +56,32 @@ async function extractFundData(fund) {
     const page = await context.newPage();
     
     if (fund.type === 'sparta') {
-      console.log(`🌐 [${fund.ticker}] Navegando (modo domcontentloaded para evitar timeout)...`);
-      // 'domcontentloaded' é muito mais rápido e não espera scripts infinitos de analytics
-      await page.goto(fund.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      console.log(`🌐 [${fund.ticker}] Navegando (timeout estendido para 60s)...`);
+      
+      // NOVIDADE: Tenta carregar a página com 60s. Se der timeout, tenta novamente em modo 'commit'
+      try {
+        await page.goto(fund.url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      } catch (navError) {
+        console.log(`⚠️ [${fund.ticker}] Primeira tentativa falhou (${navError.message.split('\n')[0]}). Tentando novamente em modo 'commit'...`);
+        await page.goto(fund.url, { waitUntil: 'commit', timeout: 60000 });
+        await new Promise(resolve => setTimeout(resolve, 5000)); // Dá tempo extra para o JS renderizar
+      }
       
       console.log(`🔍 [${fund.ticker}] Aguardando a tabela renderizar...`);
       
-      // A MÁGICA: Espera o elemento com a classe específica da coluna aparecer no DOM
       try {
-        await page.waitForSelector('.column-cota-patrimonial', { timeout: 10000 });
+        await page.waitForSelector('.column-cota-patrimonial', { timeout: 15000 });
         
-        // A CORREÇÃO: Foca especificamente na tag <td> (célula de dados), ignorando o <th> (cabeçalho)
         let element = page.locator('td.column-cota-patrimonial').first();
 
-        // Fallback de segurança: Se por algum motivo não achar o <td>, pega o segundo elemento da classe
-        // (O primeiro é o cabeçalho, o segundo é o dado)
         if (await element.count() === 0) {
           console.log(`💡 [${fund.ticker}] Fallback: buscando o segundo elemento da classe...`);
           element = page.locator('.column-cota-patrimonial').nth(1);
         }
-        const rawText = await element.innerText();
         
+        const rawText = await element.innerText();
         console.log(`📝 [${fund.ticker}] Texto bruto extraído: "${rawText}"`);
         
-        // Limpa o texto: remove tudo que não for dígito ou vírgula, depois troca vírgula por ponto
         const cleanText = rawText.replace(/[^\d,]/g, '').replace(',', '.');
         const val = parseFloat(cleanText);
         
@@ -90,19 +92,7 @@ async function extractFundData(fund) {
           console.log(`⚠️ [${fund.ticker}] Valor inválido ou muito baixo (< 50): ${val}`);
         }
       } catch (selectorError) {
-        console.log(`⚠️ [${fund.ticker}] Não foi possível encontrar o seletor .column-cota-patrimonial. Tentando fallback...`);
-        
-        // Fallback: Se a classe mudar, tenta achar o texto "Cota Patrimonial" e pega o próximo número
-        const html = await page.content();
-        const regex = /Cota\s+Patrimonial[\s\S]{0,300}?(\d{2,3}[.,]\d{2})/i;
-        const match = html.match(regex);
-        if (match && match[1]) {
-          const val = parseFloat(match[1].replace(',', '.'));
-          if (val >= 50) {
-            console.log(`✅ [${fund.ticker}] Valor extraído via fallback regex: ${val}`);
-            return val;
-          }
-        }
+        console.log(`⚠️ [${fund.ticker}] Não foi possível encontrar o seletor. Erro: ${selectorError.message}`);
       }
       
       console.log(`⚠️ [${fund.ticker}] Falha na extração.`);
@@ -183,7 +173,7 @@ async function extractFundData(fund) {
 }
 
 async function runUpdate() {
-  console.log("🚀 Iniciando atualização v1.5.0...");
+  console.log("🚀 Iniciando atualização v1.5.2...");
   const today = new Date().toISOString().split('T')[0];
   let successCount = 0;
 

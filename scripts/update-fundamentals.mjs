@@ -1,6 +1,6 @@
 /*
   Robô de Atualização de Fundamentos (Cota Patrimonial)
-  v1.4.1 - Raio-X do HTML renderizado + Regex de longo alcance
+  v1.4.2 - Limpeza de JSON noise para extração precisa
 */
 import { initializeApp } from "firebase/app";
 import { getFirestore, doc, setDoc, getDoc } from "firebase/firestore";
@@ -61,21 +61,20 @@ async function extractFundData(fund) {
       
       const html = await page.content();
       
-      // 🔍 RAIO-X: Imprime o trecho exato do HTML onde aparece "Cota Patrimonial"
-      const debugIdx = html.toLowerCase().indexOf('cota patrimonial');
-      if (debugIdx !== -1) {
-        console.log(`🔍 [${fund.ticker}] RAIO-X DO HTML: ...${html.substring(debugIdx, debugIdx + 600)}...`);
-      } else {
-        console.log(`⚠️ [${fund.ticker}] Texto "Cota Patrimonial" não encontrado no HTML renderizado!`);
-      }
+      //  LIMPEZA CIRÚRGICA: Remove o texto quando ele está entre aspas (formato JSON)
+      // Isso elimina o bloco de configuração do DataTables, deixando apenas o texto visível da tela
+      const cleanHtml = html
+        .replace(/"Cota Patrimonial"/gi, '')
+        .replace(/"Cota de Mercado"/gi, '')
+        .replace(/"Última Distribuição"/gi, '');
 
-      // Regex de longo alcance (2000 caracteres) para pular tags HTML complexas
-      const regex = /cota\s+patrimonial[\s\S]{0,2000}?(\d{2,3}[.,]\d{2})/gi;
-      const matches = [...html.matchAll(regex)];
+      // Regex agora só vai encontrar o texto visível na tela
+      const regex = /Cota\s+Patrimonial[\s\S]{0,500}?(\d{2,3}[.,]\d{2})/gi;
+      const matches = [...cleanHtml.matchAll(regex)];
       
       const validMatches = matches.filter(m => {
         const val = parseFloat(m[1].replace(',', '.'));
-        return val >= 50; // Filtra dividendos e outros números pequenos
+        return val >= 50; // Filtro de sanidade: Cota Patrimonial de FII raramente é < 50
       });
 
       if (validMatches.length > 0) {
@@ -84,7 +83,7 @@ async function extractFundData(fund) {
         return val;
       }
       
-      console.log(`⚠️ [${fund.ticker}] Nenhum valor válido (>= 50) encontrado após "Cota Patrimonial".`);
+      console.log(`️ [${fund.ticker}] Nenhum valor válido encontrado.`);
       return null;
 
     } else if (fund.type === 'excel') {
@@ -99,7 +98,7 @@ async function extractFundData(fund) {
       }
 
       const href = await linkElement.getAttribute('href');
-      console.log(`️ [${fund.ticker}] Baixando...`);
+      console.log(`⬇️ [${fund.ticker}] Baixando...`);
       
       const response = await page.request.get(href, { timeout: 15000 });
       if (!response.ok()) {
@@ -162,7 +161,7 @@ async function extractFundData(fund) {
 }
 
 async function runUpdate() {
-  console.log("🚀 Iniciando atualização v1.4.1...");
+  console.log("🚀 Iniciando atualização v1.4.2...");
   const today = new Date().toISOString().split('T')[0];
   let successCount = 0;
 
@@ -191,7 +190,7 @@ async function runUpdate() {
         console.log(`⏸️ ${fund.ticker} inalterado (R$ ${newCota.toFixed(2)})`);
       }
     } else {
-      console.log(`⚠️ ${fund.ticker}: Falha na extração.`);
+      console.log(`️ ${fund.ticker}: Falha na extração.`);
     }
   }
 

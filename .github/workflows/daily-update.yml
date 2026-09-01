@@ -19,10 +19,18 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Cache do Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
       - name: Instalar dependências
         run: npm install
 
-      - name: Instalar navegadores do Playwright (inclui Firefox e dependências do sistema)
+      - name: Instalar navegadores do Playwright (só roda se o cache falhar)
         run: npx playwright install firefox
 
       - name: Rodar script de atualização

@@ -1,6 +1,6 @@
 {
   "name": "sparta-fund-monitor-automation",
-  "version": "1.2.0",
+  "version": "1.5.3",
   "type": "module",
   "description": "Script de automação de fundamentos via GitHub Actions com Playwright",
   "scripts": {

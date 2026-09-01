@@ -1,6 +1,6 @@
 /* ============================================
    SPARTA FUND MONITOR - APLICAÇÃO
-   Versão: 1.2.0 (Refatoração completa)
+   Versão: 1.5.3 (Refatoração completa)
    ============================================ */
 
 // [SEÇÃO 12] Firebase Configuration

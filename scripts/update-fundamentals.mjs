@@ -100,12 +100,29 @@ async function extractFundData(fund) {
 
     } else if (fund.type === 'excel') {
       console.log(`🌐 [${fund.ticker}] Navegando para buscar planilha...`);
-      await page.goto(fund.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // MUDANÇA 1: 'networkidle' garante que o site da XP terminou de carregar os documentos via JS
+      try {
+        await page.goto(fund.url, { waitUntil: 'networkidle', timeout: 45000 });
+      } catch (e) {
+        console.log(`⚠️ [${fund.ticker}] Timeout no networkidle, tentando continuar mesmo assim...`);
+      }
       
       const linkElement = await page.locator(`a:has-text("${fund.documentName}")`).first();
+      
       if (await linkElement.count() === 0) {
-        console.error(`❌ [${fund.ticker}] Link não encontrado.`);
+        console.error(`❌ [${fund.ticker}] Link "${fund.documentName}" não encontrado.`);
+        
+        // MUDANÇA 2: Diagnóstico! Lista links com palavras-chave para sabermos se o nome mudou
+        const allLinks = await page.locator('a').allInnerTexts();
+        const relevantLinks = allLinks.filter(text => 
+          text.toLowerCase().includes('planilha') || 
+          text.toLowerCase().includes('fund') || 
+          text.toLowerCase().includes('cota') ||
+          text.toLowerCase().includes('lâmina')
+        );
+        console.log(`🔍 [${fund.ticker}] Links relevantes encontrados na página:`, relevantLinks.slice(0, 10));
+        
         return null;
       }
 
@@ -173,7 +190,7 @@ async function extractFundData(fund) {
 }
 
 async function runUpdate() {
-  console.log("🚀 Iniciando atualização v1.5.2...");
+  console.log("🚀 Iniciando atualização v1.5.3...");
   const today = new Date().toISOString().split('T')[0];
   let successCount = 0;
 

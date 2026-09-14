@@ -1,5 +1,6 @@
 # .github/workflows/deploy.yml
-# Deploy para GitHub Pages via branch gh-pages (peaceiris)
+# Deploy para GitHub Pages usando peaceiris (gh-pages branch)
+# Gera token.js com a chave BRAPIDEV_TOKEN antes do deploy
 
 name: Deploy to GitHub Pages
 
@@ -8,13 +9,12 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+    permissions:
+      contents: write
+
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
@@ -23,11 +23,12 @@ jobs:
         run: |
           echo "window.BRAPIDEV_TOKEN = '${{ secrets.BRAPIDEV_TOKEN }}';" > token.js
 
-      - name: 🚀 Deploy to gh-pages
+      - name: 🚀 Deploy para gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: .
+          publish_branch: gh-pages
           user_name: "Sparta Bot"
           user_email: "bot@sparta-app.local"
           commit_message: "🤖 Deploy automático [skip ci]"

@@ -1,3 +1,6 @@
+# .github/workflows/deploy.yml
+# Deploy para GitHub Pages via branch gh-pages (peaceiris)
+
 name: Deploy to GitHub Pages
 
 on:
@@ -6,36 +9,25 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
+  contents: write
 
 jobs:
   deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout repository
+      - name: 📥 Checkout
         uses: actions/checkout@v4
 
-      - name: Inject API Token
+      - name: 🔑 Inject API Token
         run: |
           echo "window.BRAPIDEV_TOKEN = '${{ secrets.BRAPIDEV_TOKEN }}';" > token.js
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v5
-
-      - name: Upload site artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: 🚀 Deploy to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
         with:
-          path: '.'
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: .
+          user_name: "Sparta Bot"
+          user_email: "bot@sparta-app.local"
+          commit_message: "🤖 Deploy automático [skip ci]"

@@ -1,0 +1,75 @@
+# .github/workflows/update-dy.yml
+# Atualiza automaticamente o Dividend Yield dos fundos Sparta
+# Fonte: Power BI oficial do Portal do Cotista Sparta
+# Cache do Chromium para execuções mais rápidas
+
+name: 🤖 Atualizar DY automático
+
+on:
+  schedule:
+    - cron: "0 8 * * 1-5"   # Seg-Sex 08:00 UTC (05:00 BRT)
+  workflow_dispatch:          # Permite execução manual
+
+jobs:
+  update-dy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 Checkout do repositório
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.HERMES_PAT || secrets.GITHUB_TOKEN }}
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 📦 Instalar dependências do sistema (Chromium)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgbm1 libasound2 libnss3 libxkbcommon0
+
+      - name: 📦 Instalar dependências Python
+        run: pip install playwright
+
+      - name: ♻️ Cache do Chromium
+        id: cache-chromium
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-v1
+          restore-keys: |
+            playwright-chromium-${{ runner.os }}-
+
+      - name: 🌐 Instalar Chromium (se não estiver em cache)
+        if: steps.cache-chromium.outputs.cache-hit != 'true'
+        run: python -m playwright install chromium
+        timeout-minutes: 5
+
+      - name: 🏷️ Extrair DY do Power BI
+        id: extrair-dy
+        run: python scripts/update_dy.py
+        continue-on-error: true  # Não falha se Power BI não carregar
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ~/.cache/ms-playwright
+
+      - name: ⚠️ Alerta se falhou
+        if: steps.extrair-dy.outcome != 'success'
+        run: |
+          echo "⚠️ Power BI não respondeu. DY mantido para próxima execução."
+          echo "powerbi_falhou=true" >> $GITHUB_ENV
+
+      - name: 📝 Verificar e commitar alterações
+        run: |
+          git config user.name "Sparta Bot"
+          git config user.email "bot@sparta-app.local"
+          git add fundamentals.json
+          if git diff --cached --quiet; then
+            echo "✅ fundamentals.json inalterado — nada a commitar."
+          else
+            git commit -m "🤖 DY atualizado automaticamente [skip ci]"
+            git push
+            echo "✅ Commit realizado com sucesso."
+          fi

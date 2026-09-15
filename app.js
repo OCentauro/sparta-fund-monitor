@@ -820,9 +820,9 @@ Promise.all([
 ]).then(([fundLoaded, macroLoaded]) => {
   console.log('🔥 Firestore carregado - Fundamentos:', fundLoaded, 'Macro:', macroLoaded);
   showFundamentalsDate();
-  fetchData(false);
+  fetchData(true);
 }).catch(err => {
   console.error('❌ Erro na inicialização:', err);
   showFundamentalsDate();
-  fetchData(false);
+  fetchData(true);
 });

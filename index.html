@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f172a">
+  <title>Sparta Fund Monitor</title>
+  <link rel="manifest" href="manifest.json">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-title" content="SpartaFII">
+  
+  <!-- CSS Externo -->
+  <link rel="stylesheet" href="style.css">
+  
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+</head>
+<body>
+  <header>
+    <div>
+      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+        <h1>Sparta Fund Monitor</h1>
+        <span id="app-version" style="font-size: 0.75rem; color: var(--muted); background: var(--border); padding: 2px 8px; border-radius: 12px; font-weight: 600;">v1.1.0</span>
+      </div>
+      <div class="meta">Monitoramento de fundos geridos pela Sparta Asset Management</div>
+      <div id="fundamentals-badge">📅 Fundamentos atualizados em: <span id="fund-date-text">...</span></div>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+      <span id="last-update" class="meta">Aguardando...</span>
+      <button id="refresh-btn">Atualizar</button>
+      <div id="auth-area">
+        <button id="login-btn" class="secondary">Login</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Painel de Taxas Macro -->
+  <section class="macro-panel">
+    <h2 style="position:absolute; left:-9999px; top:auto; width:1px; height:1px; overflow:hidden;">Painel de Taxas Macro</h2>
+    <div class="macro-item">
+      <label>Taxa CDI <span class="auto-tag">🔄 Auto</span></label>
+      <input type="number" step="0.01" id="taxa-cdi" placeholder="Ex: 10.75">
+    </div>
+    <div class="macro-item">
+      <label>Tesouro IPCA+ Longo <span class="auto-tag">✏️ Manual</span></label>
+      <input type="number" step="0.01" id="taxa-ipca" placeholder="Ex: 6.15">
+    </div>
+    <button id="save-macro-btn" onclick="saveMacroToStorage()" style="align-self: end; display: none;">Salvar Taxas</button>
+  </section>
+
+  <main id="grid" class="grid"></main>
+
+  <!-- Guia de Indicadores -->
+  <section class="guide-section">
+    <h2>📖 Guia de Indicadores</h2>
+    <div class="guide-grid">
+      <div class="guide-item"><b>Preço:</b> Cotação atual de mercado em tempo real.</div>
+      <div class="guide-item"><b>P/VP:</b> Preço sobre Valor Patrimonial. <span style="color:var(--success)">Menor que 1 (Desconto)</span> | <span style="color:var(--danger)">Maior que 1 (Prêmio)</span>.</div>
+      <div class="guide-item"><b>P/FFO:</b> Preço sobre Fundo de Funds Operations. Quanto menor, mais barato o fundo está em relação à sua geração de caixa recorrente.</div>
+      <div class="guide-item"><b>DY:</b> Dividend Yield. Percentual de dividendos pagos nos últimos 12 meses em relação ao preço atual.</div>
+      <div class="guide-item"><b>Cota Patrimonial (VP):</b> Valor contábil da cota. Dado oficial divulgado pela administradora nos informes mensais.</div>
+    </div>
+  </section>
+
+  <!-- Modal de Login -->
+  <div id="login-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Login de Administrador</h2>
+        <button class="close-btn" onclick="closeLoginModal()">&times;</button>
+      </div>
+      <div class="login-form">
+        <input type="email" id="login-email" placeholder="Email">
+        <input type="password" id="login-password" placeholder="Senha">
+        <div id="login-error" style="color: var(--danger); font-size: 0.875rem; display: none;"></div>
+        <button id="login-submit">Entrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Edição de Fundamentos -->
+  <div id="edit-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Editar Fundamentos</h2>
+        <button class="close-btn" onclick="closeEditModal()">&times;</button>
+      </div>
+      <form id="edit-form"></form>
+      <div id="edit-status" style="font-size: 0.875rem; margin-top: 10px; text-align: center;"></div>
+      <div class="modal-actions">
+        <button type="button" class="secondary" onclick="closeEditModal()">Cancelar</button>
+        <button type="button" id="save-btn" onclick="saveFundamentals()">Salvar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JavaScript Externo -->
+  <script src="app.js?v=3"></script>
+</body>
+</html>

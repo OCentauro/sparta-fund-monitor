@@ -1,0 +1,824 @@
+/* ============================================
+   SPARTA FUND MONITOR - APLICAÇÃO
+   Versão: 1.5.3 (Refatoração completa)
+   ============================================ */
+
+// [SEÇÃO 12] Firebase Configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyCUGI3NzVQ6VOe0AtImR9XHLscDC_kPLes",
+  authDomain: "sparta-fund-monitor.firebaseapp.com",
+  projectId: "sparta-fund-monitor",
+  storageBucket: "sparta-fund-monitor.firebasestorage.app",
+  messagingSenderId: "81992335341",
+  appId: "1:81992335341:web:affa10dda248cec15c31e4"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// [SEÇÃO 13] Configurações do App
+const APP_VERSION = '1.2.0';
+const API_KEY = '7EpuGco9ML58FkFmZVyBWY';
+const FUNDS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11', 'MXRF11'];
+const BASE_URL = 'https://brapi.dev/api/quote';
+
+// URLs oficiais dos fundos
+const FUND_LINKS = {
+  'JURO11': { site: 'https://www.sparta.com.br/sparta-fi-infra/', nome: 'Sparta RI' },
+  'DIVS11': { site: 'https://www.sparta.com.br/divs11/', nome: 'Sparta RI' },
+  'CRAA11': { site: 'https://www.sparta.com.br/craa11/', nome: 'Sparta RI' },
+  'CDII11': { site: 'https://www.sparta.com.br/sparta-cdii11/', nome: 'Sparta RI' },
+  'MXRF11': { site: 'https://www.xpasset.com.br/fundos/maxi-renda/', nome: 'XP Asset' }
+};
+
+// [SEÇÃO 14] Dados Fundamentais (Fallback)
+let FUNDAMENTALS = {
+  "JURO11": { "vp": 101.32, "pffo": 8.5, "dy": 11.69, "benchmark": "IMAB 5 + 2%", "taxaRef": 6.0, "updated": "2026-06-19" },
+  "DIVS11": { "vp": 9.50, "pffo": 10.2, "dy": 13.00, "benchmark": "IDkA IPCA 5A + 2%", "taxaRef": 6.0, "updated": "2026-06-19" },
+  "CRAA11": { "vp": 8.90, "pffo": 9.7, "dy": 14.95, "benchmark": "IPCA+ longo", "taxaRef": 6.0, "updated": "2026-06-19" },
+  "CDII11": { "vp": 9.20, "pffo": 9.9, "dy": 17.09, "benchmark": "CDI", "taxaRef": 10.75, "updated": "2026-06-19" },
+  "MXRF11": { "vp": 10.36, "pffo": 11.5, "dy": 12.50, "benchmark": "CDI", "taxaRef": 10.75, "updated": "2026-06-19" }
+};
+
+// Dados macroeconômicos
+let MACRO_DATA = {
+  taxaCdi: null,
+  taxaIpca: null
+};
+
+// [SEÇÃO 15] Elementos do DOM
+const grid = document.getElementById('grid');
+const refreshBtn = document.getElementById('refresh-btn');
+const lastUpdateEl = document.getElementById('last-update');
+const cacheKey = 'sparta_price_cache';
+const cacheTimeKey = 'sparta_price_ts';
+const CACHE_TIME = 60 * 60 * 1000;
+
+let currentPrices = [];
+
+// ============================================
+// FIREBASE - CARREGAMENTO DE DADOS
+// ============================================
+
+// [SEÇÃO 16] Firebase - Carregar Fundamentos
+function loadFundamentalsFromFirestore() {
+  return new Promise((resolve) => {
+    console.log('🔄 Carregando fundamentos do Firestore...');
+    
+    db.collection('fundamentals').get().then(snapshot => {
+      console.log('📊 Snapshot recebido:', snapshot.size, 'documentos');
+      
+      if (snapshot.empty) {
+        console.log('📭 Nenhum dado no Firestore, usando fallback');
+        resolve(false);
+        return;
+      }
+      
+      const newData = {};
+      snapshot.forEach(doc => {
+        console.log('📄 Documento:', doc.id, doc.data());
+        newData[doc.id] = doc.data();
+      });
+      
+      FUNDAMENTALS = newData;
+      console.log('✅ Fundamentos carregados do Firestore:', FUNDAMENTALS);
+      resolve(true);
+    }).catch(err => {
+      console.error('❌ Erro ao carregar do Firestore:', err);
+      resolve(false);
+    });
+  });
+}
+
+// [SEÇÃO 16.5] Carregar Dados Macro do Firestore
+function loadMacroFromFirestore() {
+  return new Promise((resolve) => {
+    console.log('🔄 Carregando dados macro do Firestore...');
+    
+    db.collection('config').doc('macro').get().then(doc => {
+      if (doc.exists) {
+        const data = doc.data();
+        MACRO_DATA.taxaCdi = data.taxaCdi || null;
+        MACRO_DATA.taxaIpca = data.taxaIpca || null;
+        console.log('✅ Dados macro carregados:', MACRO_DATA);
+        
+        const cdiInput = document.getElementById('taxa-cdi');
+        const ipcaInput = document.getElementById('taxa-ipca');
+        if (cdiInput && MACRO_DATA.taxaCdi) {
+          cdiInput.value = MACRO_DATA.taxaCdi;
+          console.log('📊 CDI preenchido:', MACRO_DATA.taxaCdi);
+        }
+        if (ipcaInput && MACRO_DATA.taxaIpca) {
+          ipcaInput.value = MACRO_DATA.taxaIpca;
+          console.log('📊 IPCA preenchido:', MACRO_DATA.taxaIpca);
+        }
+        
+        resolve(true);
+      } else {
+        console.log('📭 Nenhum dado macro no Firestore');
+        resolve(false);
+      }
+    }).catch(err => {
+      console.error('❌ Erro ao carregar dados macro:', err);
+      resolve(false);
+    });
+  });
+}
+
+// ============================================
+// FIREBASE - SALVAMENTO DE DADOS
+// ============================================
+
+// [SEÇÃO 17] Firebase - Salvar Fundamentos
+async function saveFundamentals() {
+  const saveBtn = document.getElementById('save-btn');
+  const statusEl = document.getElementById('edit-status');
+  
+  console.log('🔴 INICIANDO SALVAMENTO...');
+  
+  if (saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Salvando...';
+  }
+  if (statusEl) {
+    statusEl.textContent = 'Processando...';
+    statusEl.style.color = 'var(--muted)';
+  }
+  
+  try {
+    const batch = db.batch();
+    
+    FUNDS.forEach(ticker => {
+      const vpEl = document.getElementById(`vp-${ticker}`);
+      const pffoEl = document.getElementById(`pffo-${ticker}`);
+      const dyEl = document.getElementById(`dy-${ticker}`);
+      const benchEl = document.getElementById(`benchmark-${ticker}`);
+      const taxaEl = document.getElementById(`taxaRef-${ticker}`);
+      
+      const vp = vpEl ? parseFloat(vpEl.value) : null;
+      const pffo = pffoEl ? parseFloat(pffoEl.value) : null;
+      const dy = dyEl ? parseFloat(dyEl.value) : null;
+      const benchmark = benchEl ? benchEl.value.trim() : '';
+      const taxaRef = taxaEl ? parseFloat(taxaEl.value) : null;
+      
+      console.log(`📊 ${ticker}:`, {
+        vp, pffo, dy, benchmark, taxaRef,
+        taxaElExiste: !!taxaEl,
+        taxaElValue: taxaEl ? taxaEl.value : 'N/A'
+      });
+      
+      const docRef = db.collection('fundamentals').doc(ticker);
+      batch.set(docRef, {
+        vp: isNaN(vp) ? null : vp,
+        pffo: isNaN(pffo) ? null : pffo,
+        dy: isNaN(dy) ? null : dy,
+        benchmark: benchmark,
+        taxaRef: isNaN(taxaRef) ? null : taxaRef,
+        updated: new Date().toISOString().split('T')[0],
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+    
+    console.log('📤 Enviando para Firestore...');
+    await batch.commit();
+    console.log('✅ Commit realizado com sucesso!');
+    
+    await loadFundamentalsFromFirestore();
+    showFundamentalsDate();
+    renderData(currentPrices);
+    
+    if (statusEl) {
+      statusEl.textContent = '✅ Dados salvos com sucesso!';
+      statusEl.style.color = 'var(--success)';
+    }
+    
+    setTimeout(() => {
+      closeEditModal();
+    }, 1500);
+    
+  } catch (err) {
+    console.error('❌ ERRO AO SALVAR:', err);
+    if (statusEl) {
+      statusEl.textContent = '❌ Erro: ' + err.message;
+      statusEl.style.color = 'var(--danger)';
+    }
+  } finally {
+    if (saveBtn) {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Salvar';
+    }
+  }
+}
+
+// [SEÇÃO MACRO] Salvar Taxas Macro no Firestore
+async function saveMacroToStorage() {
+  const taxaCdi = document.getElementById('taxa-cdi').value;
+  const taxaIpca = document.getElementById('taxa-ipca').value;
+  
+  const btn = document.getElementById('save-macro-btn');
+  const originalText = btn.textContent;
+  
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+  
+  try {
+    console.log('💾 Salvando taxas macro no Firestore...');
+    
+    const macroRef = db.collection('config').doc('macro');
+    await macroRef.set({
+      taxaCdi: parseFloat(taxaCdi) || null,
+      taxaIpca: parseFloat(taxaIpca) || null,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    
+    console.log('✅ Taxas macro salvas no Firestore!');
+    
+    MACRO_DATA.taxaCdi = parseFloat(taxaCdi) || null;
+    MACRO_DATA.taxaIpca = parseFloat(taxaIpca) || null;
+    
+    renderData(currentPrices);
+    
+    btn.textContent = '✅ Salvo!';
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }, 1500);
+    
+  } catch (err) {
+    console.error('❌ Erro ao salvar taxas macro:', err);
+    btn.textContent = '❌ Erro!';
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }, 1500);
+  }
+}
+
+// ============================================
+// AUTENTICAÇÃO
+// ============================================
+
+// [SEÇÃO 18] Autenticação
+function setupAuthListener() {
+  auth.onAuthStateChanged(user => {
+    const authArea = document.getElementById('auth-area');
+    const saveMacroBtn = document.getElementById('save-macro-btn');
+    
+    if (user) {
+      authArea.innerHTML = `
+        <div class="user-info">
+          <button id="edit-btn">Editar Fundamentos</button>
+          <button id="logout-btn" class="danger">Sair</button>
+        </div>
+      `;
+      document.getElementById('edit-btn').addEventListener('click', showEditModal);
+      document.getElementById('logout-btn').addEventListener('click', () => auth.signOut());
+      
+      if (saveMacroBtn) saveMacroBtn.style.display = 'block';
+    } else {
+      authArea.innerHTML = `<button id="login-btn" class="secondary">Login</button>`;
+      document.getElementById('login-btn').addEventListener('click', openLoginModal);
+      
+      if (saveMacroBtn) saveMacroBtn.style.display = 'none';
+    }
+  });
+}
+
+function openLoginModal() {
+  document.getElementById('login-modal').classList.add('active');
+  document.getElementById('login-error').style.display = 'none';
+}
+
+function closeLoginModal() {
+  document.getElementById('login-modal').classList.remove('active');
+  document.getElementById('login-email').value = '';
+  document.getElementById('login-password').value = '';
+}
+
+async function handleLogin() {
+  const email = document.getElementById('login-email').value;
+  const password = document.getElementById('login-password').value;
+  const errorEl = document.getElementById('login-error');
+  
+  try {
+    await auth.signInWithEmailAndPassword(email, password);
+    closeLoginModal();
+  } catch (err) {
+    errorEl.textContent = '❌ ' + err.message;
+    errorEl.style.display = 'block';
+  }
+}
+
+// ============================================
+// MODAL DE EDIÇÃO
+// ============================================
+
+// [SEÇÃO 19] Modal de Edição
+function showEditModal() {
+  const form = document.getElementById('edit-form');
+  
+  const header = `
+    <div class="edit-header">
+      <div>Ticker</div>
+      <div>Cota Pat. (R$)</div>
+      <div>P/FFO</div>
+      <div>DY %</div>
+      <div>Benchmark / Taxa</div>
+    </div>
+  `;
+  
+  const rows = FUNDS.map(ticker => {
+    const fund = FUNDAMENTALS[ticker] || {};
+    return `
+      <div class="edit-row">
+        <div class="ticker-label">${ticker}</div>
+        <input type="number" step="0.01" id="vp-${ticker}" placeholder="0.00" value="${fund.vp !== undefined && fund.vp !== null ? fund.vp : ''}">
+        <input type="number" step="0.01" id="pffo-${ticker}" placeholder="0.00" value="${fund.pffo !== undefined && fund.pffo !== null ? fund.pffo : ''}">
+        <input type="number" step="0.01" id="dy-${ticker}" placeholder="0.00" value="${fund.dy !== undefined && fund.dy !== null ? fund.dy : ''}">
+        <div style="display: flex; gap: 4px;">
+          <input type="text" id="benchmark-${ticker}" placeholder="Ex: CDI" value="${fund.benchmark || ''}" style="flex: 2;">
+          <input type="number" step="0.01" id="taxaRef-${ticker}" placeholder="Taxa" value="${fund.taxaRef !== undefined && fund.taxaRef !== null ? fund.taxaRef : ''}" style="flex: 1;">
+        </div>
+      </div>
+    `;
+  }).join('');
+  
+  form.innerHTML = header + rows;
+  document.getElementById('edit-modal').classList.add('active');
+  document.getElementById('edit-status').textContent = '';
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').classList.remove('active');
+}
+
+// ============================================
+// REGRAS DE NEGÓCIO - CLASSIFICAÇÃO
+// ============================================
+
+// [SEÇÃO 19.5] Regras de Negócio - Classificação de Ativos
+
+function classifyTijolo(pffo, taxaIpca) {
+  if (!pffo || !taxaIpca) return { status: 'Sem dados', line: '', class: 'status-neutro' };
+  
+  const ffoYield = 1 / pffo;
+  let status = '';
+  let line = '';
+  let cssClass = 'status-neutro';
+  
+  if (pffo < 6) {
+    status = '⚠️ ALERTA: Possível Armadilha de Valor';
+    cssClass = 'status-alerta';
+  } else if (pffo >= 6 && pffo <= 10) {
+    status = '✅ Muito Atrativo';
+    cssClass = 'status-atractivo';
+  } else {
+    status = '️ P/FFO Fora da Faixa Ideal';
+    cssClass = 'status-neutro';
+  }
+  
+  if (ffoYield > (taxaIpca + 0.02)) {
+    line = '💰 Prêmio de Risco Válido frente aos Juros';
+  } else {
+    line = '⚠️ Prêmio de Risco Insuficiente';
+  }
+  
+  return { status, line, class: cssClass };
+}
+
+function classifyPapelFiagro(pvp) {
+  if (pvp === null || pvp === undefined) return { status: 'Sem dados', line: '', class: 'status-neutro' };
+  
+  if (pvp < 0.85) {
+    return { 
+      status: '⚠️ ALERTA: Alto Risco de Inadimplência', 
+      line: 'Possível calote na carteira',
+      class: 'status-alerta' 
+    };
+  } else if (pvp >= 0.93 && pvp <= 0.99) {
+    return { 
+      status: '✅ Com Desconto / Oportunidade', 
+      line: 'Faixa atrativa de compra',
+      class: 'status-atractivo' 
+    };
+  } else if (pvp > 1.00 && pvp <= 1.02) {
+    return { 
+      status: '💵 Preço Justo com Leve Ágio', 
+      line: 'Valor justo de mercado',
+      class: 'status-premio' 
+    };
+  } else if (pvp > 1.02) {
+    return { 
+      status: '💸 Caro / Ágio Elevado', 
+      line: 'Deságio recomendado',
+      class: 'status-alerta' 
+    };
+  } else {
+    return { 
+      status: 'ℹ️ Faixa Intermediária', 
+      line: 'Aguardar melhor ponto de entrada',
+      class: 'status-neutro' 
+    };
+  }
+}
+
+function classifyHibrido(pvp, dy, taxaCdi) {
+  if (!pvp || !dy || !taxaCdi) return { status: 'Sem dados', line: '', class: 'status-neutro' };
+  
+  const dyDecimal = dy / 100;
+  const cdiDecimal = taxaCdi / 100;
+  
+  if (pvp <= 1.02 && dyDecimal > cdiDecimal) {
+    return { 
+      status: '✅ Eficiente: Preço Controlado + Retorno > CDI', 
+      line: `DY ${(dy).toFixed(2)}% > CDI ${(taxaCdi).toFixed(2)}%`,
+      class: 'status-atractivo' 
+    };
+  } else {
+    return { 
+      status: '❌ Inadequado ou Fora do Preço', 
+      line: `P/VP ${pvp.toFixed(2)} ou DY ${(dy).toFixed(2)}% insuficiente`,
+      class: 'status-alerta' 
+    };
+  }
+}
+
+function classifyFiInfraIpca(carrego, taxaIpca) {
+  if (!carrego || !taxaIpca) return { status: 'Sem dados', line: '', class: 'status-neutro' };
+  
+  const spread = carrego - taxaIpca;
+  
+  if (spread >= 1.5) {
+    return { 
+      status: '✅ Altamente Atrativo (Prêmio Robusto)', 
+      line: `Spread IPCA+${spread.toFixed(2)}% vs Tesouro IPCA+${taxaIpca.toFixed(2)}%`,
+      class: 'status-atractivo' 
+    };
+  } else {
+    return { 
+      status: '⚠️ Margem Estrita frente ao Título Público', 
+      line: `Spread IPCA+${spread.toFixed(2)}% < IPCA+1.50%`,
+      class: 'status-alerta' 
+    };
+  }
+}
+
+function classifyFiInfraCdi(yieldCdi) {
+  if (!yieldCdi) return { status: 'Sem dados', line: '', class: 'status-neutro' };
+  
+  if (yieldCdi >= 110) {
+    return { 
+      status: '✅ Excelente Geração de Caixa Isenta', 
+      line: `${yieldCdi}% do CDI - Acima do benchmark`,
+      class: 'status-atractivo' 
+    };
+  } else {
+    return { 
+      status: 'ℹ️ Retorno Dentro da Média de Mercado', 
+      line: `${yieldCdi}% do CDI - Na média`,
+      class: 'status-neutro' 
+    };
+  }
+}
+
+function classifyFund(ticker, priceData) {
+  const fund = FUNDAMENTALS[ticker] || {};
+  const pvp = (fund.vp && priceData.regularMarketPrice) 
+    ? (priceData.regularMarketPrice / fund.vp) 
+    : null;
+  
+  const taxaCdi = parseFloat(document.getElementById('taxa-cdi')?.value) || null;
+  const taxaIpca = parseFloat(document.getElementById('taxa-ipca')?.value) || null;
+  
+  if (ticker === 'DIVS11') {
+    return classifyFiInfraIpca(fund.carrego, taxaIpca);
+  } else if (ticker === 'JURO11' || ticker === 'CDII11') {
+    return classifyFiInfraCdi(fund.yieldCdi);
+  } else if (ticker === 'MXRF11' || ticker === 'CRAA11') {
+    return classifyPapelFiagro(pvp);
+  } else {
+    return classifyPapelFiagro(pvp);
+  }
+}
+
+// ============================================
+// FUNÇÕES AUXILIARES E LÓGICA DE SCORE
+// ============================================
+
+// [SEÇÃO 20] Funções Auxiliares
+function formatNumber(val, decimals = 2, suffix = '') {
+  if (val === null || val === undefined || isNaN(val)) return '-';
+  return Number(val).toFixed(decimals) + suffix;
+}
+
+// [SEÇÃO 20.5] Lógica de Score do Fundo
+function calculateFundScore(ticker, fund, price) {
+  const pvp = (fund.vp && price) ? (price / fund.vp) : 1.0;
+  const spread = (fund.dy && fund.taxaRef) ? (fund.dy - fund.taxaRef) : 0;
+  const pffo = fund.pffo || 10;
+
+  let vScore = 100 - ((pvp - 0.95) / (1.15 - 0.95)) * 100;
+  vScore = Math.max(0, Math.min(100, vScore));
+
+  let rScore = ((spread - 0) / (3 - 0)) * 100;
+  rScore = Math.max(0, Math.min(100, rScore));
+
+  let qScore = 100 - ((pffo - 8) / (12 - 8)) * 100;
+  qScore = Math.max(0, Math.min(100, qScore));
+
+  let tScore = pvp < 1.0 ? 70 : 50;
+  let lScore = ticker === 'MXRF11' ? 90 : 70;
+
+  const weights = {
+    "JURO11":  { T: 0.25, V: 0.20, R: 0.15, Q: 0.30, L: 0.10 },
+    "CDII11":  { T: 0.20, V: 0.20, R: 0.25, Q: 0.25, L: 0.10 },
+    "CRAA11":  { T: 0.15, V: 0.15, R: 0.20, Q: 0.40, L: 0.10 },
+    "DIVS11":  { T: 0.30, V: 0.20, R: 0.15, Q: 0.25, L: 0.10 },
+    "MXRF11":  { T: 0.20, V: 0.30, R: 0.25, Q: 0.15, L: 0.10 }
+  };
+
+  const w = weights[ticker] || { T: 0.20, V: 0.20, R: 0.20, Q: 0.20, L: 0.20 };
+  const finalScore = (tScore * w.T) + (vScore * w.V) + (rScore * w.R) + (qScore * w.Q) + (lScore * w.L);
+  const roundedScore = Math.round(finalScore);
+
+  let classification = "MANUTENÇÃO";
+  let colorClass = "score-neutral";
+  
+  if (roundedScore >= 75) {
+    classification = "COMPRA FORTE";
+    colorClass = "score-buy-strong";
+  } else if (roundedScore >= 60) {
+    classification = "COMPRA";
+    colorClass = "score-buy";
+  } else if (roundedScore >= 45) {
+    classification = "MANUTENÇÃO";
+    colorClass = "score-neutral";
+  } else if (roundedScore >= 30) {
+    classification = "SAÍDA PARCIAL";
+    colorClass = "score-sell";
+  } else {
+    classification = "SAÍDA DEFENSIVA";
+    colorClass = "score-sell-strong";
+  }
+
+  return { score: roundedScore, classification, colorClass, pvp, spread };
+}
+
+// ============================================
+// RENDERIZAÇÃO DE CARDS
+// ============================================
+
+// [SEÇÃO 21] Criar Card
+function createCard(priceData) {
+  const { symbol, regularMarketPrice } = priceData;
+  const fund = FUNDAMENTALS[symbol] || {};
+  
+  const scoreData = calculateFundScore(symbol, fund, regularMarketPrice);
+  
+  const googleUrl = `https://www.google.com/finance/quote/${symbol}:BVMF`;
+  const fundLink = FUND_LINKS[symbol] || { site: googleUrl, nome: 'Google Finance' };
+  
+  let pvpClass = '';
+  if (scoreData.pvp < 1) pvpClass = 'pvp-discount';
+  else if (scoreData.pvp > 1) pvpClass = 'pvp-premium';
+
+  let mxrfNote = '';
+  if (symbol === 'MXRF11') {
+    mxrfNote = `<div class="note mxrf-note">📁 <b>Fonte do VP:</b> Documentos > Planilha de Fundamentos ou Informe Mensal no site da XP Asset.</div>`;
+  }
+
+  let benchmarkDisplay = fund.benchmark || 'N/A';
+  if (fund.taxaRef !== null && fund.taxaRef !== undefined) {
+    benchmarkDisplay += ` (${fund.taxaRef.toFixed(2)}%)`;
+  }
+
+  return `
+    <div class="card">
+      <div class="score-badge ${scoreData.colorClass}">
+        ${scoreData.classification} (${scoreData.score})
+      </div>
+      
+      <div class="ticker">${symbol}</div>
+      <div class="name">Fundo Sparta Asset Management</div>
+      <div class="metrics">
+        <div class="metric">
+          <span class="label">Preço</span>
+          <span class="value">R$ ${formatNumber(regularMarketPrice)}</span>
+        </div>
+        <div class="metric ${pvpClass}">
+          <span class="label">P/VP</span>
+          <span class="value">${formatNumber(scoreData.pvp)}</span>
+        </div>
+        <div class="metric">
+          <span class="label">P/FFO</span>
+          <span class="value">${formatNumber(fund.pffo)}</span>
+        </div>
+        <div class="metric">
+          <span class="label">DY</span>
+          <span class="value">${formatNumber(fund.dy, 2)}%</span>
+        </div>
+        <div class="metric" style="grid-column: span 2;">
+          <span class="label">Cota Patrimonial</span>
+          <span class="value">R$ ${fund.vp ? formatNumber(fund.vp) : '-'}</span>
+        </div>
+      </div>
+      <div class="links">
+        <a href="${googleUrl}" target="_blank" class="link">Google Finance</a>
+        <a href="${fundLink.site}" target="_blank" class="link">${fundLink.nome}</a>
+      </div>
+      <div class="note">📊 Indicadores: ${fund.updated ? 'Atualizado em ' + fund.updated.split('-').reverse().join('/') : 'Consulte o informe mensal'}. P/FFO é o padrão institucional para FIIs.</div>
+      ${benchmarkDisplay !== 'N/A' ? `<div class="note">🎯 <b>Benchmark:</b> ${benchmarkDisplay} | Spread: ${scoreData.spread > 0 ? '+' : ''}${scoreData.spread.toFixed(2)}%</div>` : ''}
+      ${mxrfNote}
+    </div>
+  `;
+}
+
+// [SEÇÃO 22] Skeleton Loading
+function renderSkeleton() {
+  grid.innerHTML = Array(FUNDS.length).fill('').map(() => `
+    <div class="card">
+      <div class="skeleton" style="width: 60%; height: 24px; margin-bottom: 8px;"></div>
+      <div class="skeleton" style="width: 40%; height: 16px; margin-bottom: 16px;"></div>
+      <div class="metrics">
+        ${Array(5).fill('').map(() => `<div class="metric"><div class="skeleton" style="height: 14px;"></div></div>`).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============================================
+// GERENCIAMENTO DE TAXAS MACRO
+// ============================================
+
+// [SEÇÃO 22.5] Gerenciar Taxas Macro
+function loadMacroFromStorage() {
+  const taxaCdi = localStorage.getItem('taxa_cdi');
+  const taxaIpca = localStorage.getItem('taxa_ipca');
+  
+  if (taxaCdi) {
+    document.getElementById('taxa-cdi').value = taxaCdi;
+  } else {
+    document.getElementById('taxa-cdi').value = '13.15';
+  }
+  
+  if (taxaIpca) {
+    document.getElementById('taxa-ipca').value = taxaIpca;
+  } else {
+    document.getElementById('taxa-ipca').value = '6.15';
+  }
+}
+
+  try {
+    const requests = FUNDS.map(ticker => {
+      // 1. Monta a URL original da Brapi
+      const brapiUrl = `${BASE_URL}/${ticker}?token=${API_KEY}`;
+      
+      // 2. Envolve a URL no proxy de CORS (codificada para segurança dos parâmetros)
+      const proxyUrl = `https://corsproxy.io/?` + encodeURIComponent(brapiUrl);
+      
+      // 3. Faz a requisição através do proxy
+      return fetch(proxyUrl).then(r => r.json());
+    });    const results = await Promise.all(requests);
+    const prices = results
+      .filter(r => r.results?.length)
+      .map(r => ({ symbol: r.results[0].symbol, regularMarketPrice: r.results[0].regularMarketPrice }));
+    
+    localStorage.setItem(cacheKey, JSON.stringify(prices));
+    localStorage.setItem(cacheTimeKey, String(now));
+    return prices;
+  } catch (err) {
+    console.error('Erro ao buscar preços:', err);
+    return [];
+  }
+}
+
+// [SEÇÃO 24] Fetch Data
+async function fetchData(force = false) {
+  if (force) {
+    localStorage.removeItem(cacheKey);
+    refreshBtn.disabled = true;
+    refreshBtn.textContent = 'Atualizando...';
+  }
+  
+  renderSkeleton();
+
+  const prices = await fetchPrices();
+  currentPrices = FUNDS.map(ticker => {
+    const price = prices.find(p => p.symbol === ticker);
+    return price ? { ...price } : { symbol: ticker, regularMarketPrice: null };
+  });
+
+  currentPrices.sort((a, b) => {
+    const vpA = FUNDAMENTALS[a.symbol]?.vp;
+    const vpB = FUNDAMENTALS[b.symbol]?.vp;
+    const priceA = a.regularMarketPrice;
+    const priceB = b.regularMarketPrice;
+    
+    const pvpA = (vpA && priceA) ? (priceA / vpA) : 999;
+    const pvpB = (vpB && priceB) ? (priceB / vpB) : 999;
+    
+    return pvpA - pvpB;
+  });
+
+  renderData(currentPrices);
+  const lastFundUpdate = Object.values(FUNDAMENTALS)[0]?.updated || 'n/a';
+  lastUpdateEl.textContent = `Preço: ${new Date().toLocaleTimeString('pt-BR')} | Fund: ${lastFundUpdate}`;
+  
+  if (force) {
+    refreshBtn.disabled = false;
+    refreshBtn.textContent = 'Atualizar';
+  }
+}
+
+// [SEÇÃO 25] Render Data
+function renderData(data) {
+  grid.innerHTML = data.map(createCard).join('');
+}
+
+// [SEÇÃO 26] Mostrar Data dos Fundamentos
+function showFundamentalsDate() {
+  const firstFund = Object.values(FUNDAMENTALS)[0];
+  if (firstFund && firstFund.updated) {
+    const [year, month, day] = firstFund.updated.split('-');
+    document.getElementById('fund-date-text').textContent = `${day}/${month}/${year}`;
+    document.getElementById('fundamentals-badge').style.display = 'inline-block';
+  }
+}
+
+// ============================================
+// INICIALIZAÇÃO
+// ============================================
+
+// [SEÇÃO 27] Inicialização
+console.log('🚀 Iniciando aplicação versão:', APP_VERSION);
+
+const versionEl = document.getElementById('app-version');
+if (versionEl) {
+  versionEl.textContent = 'v' + APP_VERSION;
+}
+
+document.getElementById('login-submit').addEventListener('click', handleLogin);
+
+// Botão ATUALIZAR: Chama a Cloud Function do Firebase
+refreshBtn.addEventListener('click', async function() {
+    const btn = this;
+    const originalText = btn.textContent;
+    
+    btn.disabled = true;
+    btn.textContent = '🔄 Acionando robô...';
+    btn.style.opacity = "0.7";
+
+    const functionUrl = 'https://triggerspartaupdate-e4tnxzli6a-uc.a.run.app';
+
+    try {
+        const response = await fetch(functionUrl, {
+            method: 'POST',
+            cache: 'no-store'
+        });
+
+        if (response.ok) {
+            btn.textContent = "✅ Robô acionado! (Aguarde ~2 min)";
+            btn.style.color = "green";
+            console.log("Sinal enviado para o Firebase com sucesso!");
+            
+            setTimeout(() => {
+                fetchData(true);
+                btn.textContent = originalText;
+                btn.style.color = "";
+                btn.style.opacity = "1";
+                btn.disabled = false;
+            }, 120000);
+            
+        } else {
+            throw new Error(`Erro no Webhook: ${response.status}`);
+        }
+    } catch (error) {
+        console.error("Falha ao acionar o robô:", error);
+        btn.textContent = "❌ Erro ao acionar";
+        btn.style.color = "red";
+        
+        setTimeout(() => {
+            btn.disabled = false;
+            btn.textContent = originalText;
+            btn.style.color = "";
+            btn.style.opacity = "1";
+        }, 3000);
+    }
+});
+
+setupAuthListener();
+
+// Carrega dados do Firestore e depois busca preços
+Promise.all([
+  loadFundamentalsFromFirestore(),
+  loadMacroFromFirestore()
+]).then(([fundLoaded, macroLoaded]) => {
+  console.log('🔥 Firestore carregado - Fundamentos:', fundLoaded, 'Macro:', macroLoaded);
+  showFundamentalsDate();
+  fetchData(false);
+}).catch(err => {
+  console.error('❌ Erro na inicialização:', err);
+  showFundamentalsDate();
+  fetchData(false);
+});

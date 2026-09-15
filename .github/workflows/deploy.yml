@@ -9,21 +9,22 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
+    
     steps:
-      - name: 📥 Checkout
+      - name: 📥 Checkout do código
         uses: actions/checkout@v4
 
-      - name: 🔑 Inject API Token
+      - name: 🔑 Gerar arquivo token.js com a chave da Brapi
         run: |
           echo "window.BRAPIDEV_TOKEN = '${{ secrets.BRAPIDEV_TOKEN }}';" > token.js
 
-      - name: 🚀 Deploy para gh-pages
+      - name: 🚀 Deploy para a branch gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -31,4 +32,4 @@ jobs:
           publish_branch: gh-pages
           user_name: "Sparta Bot"
           user_email: "bot@sparta-app.local"
-          commit_message: "🤖 Deploy automático [skip ci]"
+          commit_message: "🤖 Deploy automático para GitHub Pages [skip ci]"

@@ -669,25 +669,17 @@ function loadMacroFromStorage() {
   }
 }
 
-// ============================================
-// BUSCA DE PREÇOS E FETCH DE DADOS
-// ============================================
-
-// [SEÇÃO 23] Buscar Preços
-async function fetchPrices() {
-  const now = Date.now();
-  const cached = localStorage.getItem(cacheKey);
-  const cachedTs = localStorage.getItem(cacheTimeKey);
-
-  if (cached && cachedTs && (now - Number(cachedTs) < CACHE_TIME)) {
-    return JSON.parse(cached);
-  }
-
   try {
-    const requests = FUNDS.map(ticker => 
-      fetch(`${BASE_URL}/${ticker}?token=${API_KEY}`).then(r => r.json())
-    );
-    const results = await Promise.all(requests);
+    const requests = FUNDS.map(ticker => {
+      // 1. Monta a URL original da Brapi
+      const brapiUrl = `${BASE_URL}/${ticker}?token=${API_KEY}`;
+      
+      // 2. Envolve a URL no proxy de CORS (codificada para segurança dos parâmetros)
+      const proxyUrl = `https://corsproxy.io/?` + encodeURIComponent(brapiUrl);
+      
+      // 3. Faz a requisição através do proxy
+      return fetch(proxyUrl).then(r => r.json());
+    });    const results = await Promise.all(requests);
     const prices = results
       .filter(r => r.results?.length)
       .map(r => ({ symbol: r.results[0].symbol, regularMarketPrice: r.results[0].regularMarketPrice }));

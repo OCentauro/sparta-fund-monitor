@@ -680,13 +680,19 @@ async function fetchPrices() {
   }
 
   try {
-    const requests = FUNDS.map(ticker =>
-      fetch(`${BASE_URL}/${ticker}?token=${API_KEY}`).then(r => r.json())
-    );
-    const results = await Promise.all(requests);
-    const prices = results
-      .filter(r => r.results?.length)
-      .map(r => ({ symbol: r.results[0].symbol, regularMarketPrice: r.results[0].regularMarketPrice }));
+    const prices = [];
+    for (const ticker of FUNDS) {
+      try {
+        const r = await fetch(`${BASE_URL}/${ticker}?token=${API_KEY}`).then(res => res.json());
+        if (r.results?.length) {
+          prices.push({ symbol: r.results[0].symbol, regularMarketPrice: r.results[0].regularMarketPrice });
+        }
+      } catch (e) {
+        console.warn('Falha ao buscar', ticker, e.message);
+      }
+      await new Promise(r => setTimeout(r, 300));
+    }
+    if (prices.length === 0) throw new Error('Nenhum preço obtido');
     
     localStorage.setItem(cacheKey, JSON.stringify(prices));
     localStorage.setItem(cacheTimeKey, String(now));

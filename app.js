@@ -680,16 +680,9 @@ async function fetchPrices() {
   }
 
   try {
-    const requests = FUNDS.map(ticker => {
-      // 1. Monta a URL original da Brapi
-      const brapiUrl = `${BASE_URL}/${ticker}?token=${API_KEY}`;
-      
-      // 2. Envolve a URL no proxy de CORS (codificada para segurança dos parâmetros)
-      const proxyUrl = `https://corsproxy.io/?` + encodeURIComponent(brapiUrl);
-      
-      // 3. Faz a requisição através do proxy
-      return fetch(proxyUrl).then(r => r.json());
-    });
+    const requests = FUNDS.map(ticker =>
+      fetch(`${BASE_URL}/${ticker}?token=${API_KEY}`).then(r => r.json())
+    );
     const results = await Promise.all(requests);
     const prices = results
       .filter(r => r.results?.length)

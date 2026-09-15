@@ -669,6 +669,16 @@ function loadMacroFromStorage() {
   }
 }
 
+// [SEÇÃO 23] Buscar Preços via Brapi + CORS Proxy
+async function fetchPrices() {
+  const now = Date.now();
+  const cached = localStorage.getItem(cacheKey);
+  const cachedTs = localStorage.getItem(cacheTimeKey);
+
+  if (cached && cachedTs && (now - Number(cachedTs) < CACHE_TIME)) {
+    return JSON.parse(cached);
+  }
+
   try {
     const requests = FUNDS.map(ticker => {
       // 1. Monta a URL original da Brapi
@@ -679,7 +689,8 @@ function loadMacroFromStorage() {
       
       // 3. Faz a requisição através do proxy
       return fetch(proxyUrl).then(r => r.json());
-    });    const results = await Promise.all(requests);
+    });
+    const results = await Promise.all(requests);
     const prices = results
       .filter(r => r.results?.length)
       .map(r => ({ symbol: r.results[0].symbol, regularMarketPrice: r.results[0].regularMarketPrice }));

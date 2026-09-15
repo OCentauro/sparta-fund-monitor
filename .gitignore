@@ -1,4 +1,5 @@
 # Ignora arquivos com tokens/chaves locais
 token.js
+!token.js
 .env
 *.local.*

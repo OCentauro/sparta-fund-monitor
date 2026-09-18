@@ -692,11 +692,21 @@ if (versionEl) {
 
 document.getElementById('login-submit').addEventListener('click', handleLogin);
 
-// Botão ATUALIZAR: Chama a Cloud Function do Firebase
+// Botão ATUALIZAR: Chama a Cloud Function do Firebase com autenticação
 refreshBtn.addEventListener('click', async function() {
     const btn = this;
     const originalText = btn.textContent;
-    
+
+    // 1. Verificar autenticação
+    if (!auth.currentUser) {
+        alert('🔒 Faça login antes de acionar o robô.');
+        openLoginModal();
+        btn.disabled = false;
+        btn.textContent = originalText;
+        btn.style.opacity = "1";
+        return;
+    }
+
     btn.disabled = true;
     btn.textContent = '🔄 Acionando robô...';
     btn.style.opacity = "0.7";
@@ -704,9 +714,15 @@ refreshBtn.addEventListener('click', async function() {
     const functionUrl = 'https://triggerspartaupdate-e4tnxzli6a-uc.a.run.app';
 
     try {
+        // 2. Obter token de ID do Firebase
+        const idToken = await auth.currentUser.getIdToken();
+
         const response = await fetch(functionUrl, {
             method: 'POST',
-            cache: 'no-store'
+            cache: 'no-store',
+            headers: {
+                'Authorization': 'Bearer ' + idToken
+            }
         });
 
         if (response.ok) {
@@ -722,12 +738,14 @@ refreshBtn.addEventListener('click', async function() {
                 btn.disabled = false;
             }, 120000);
             
+        } else if (response.status === 401) {
+            throw new Error('Não autorizado. Faça login novamente.');
         } else {
             throw new Error(`Erro no Webhook: ${response.status}`);
         }
     } catch (error) {
         console.error("Falha ao acionar o robô:", error);
-        btn.textContent = "❌ Erro ao acionar";
+        btn.textContent = "❌ " + error.message;
         btn.style.color = "red";
         
         setTimeout(() => {

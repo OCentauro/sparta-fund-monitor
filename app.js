@@ -1,11 +1,11 @@
 /* ============================================
    SPARTA FUND MONITOR - APLICAÇÃO
-   Versão: 1.5.3 (Refatoração completa)
+   Versão: 1.6.0 (Firestore-only, sem BrAPI)
    ============================================ */
 
 // [SEÇÃO 12] Firebase Configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyCUGI3NzVQ6VOe0AtImR9XHLscDC_kPLes",
+  apiKey: "***",
   authDomain: "sparta-fund-monitor.firebaseapp.com",
   projectId: "sparta-fund-monitor",
   storageBucket: "sparta-fund-monitor.firebasestorage.app",
@@ -18,10 +18,8 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 
 // [SEÇÃO 13] Configurações do App
-const APP_VERSION = '1.2.0';
-const API_KEY = '7EpuGco9ML58FkFmZVyBWY';
+const APP_VERSION = '1.6.0';
 const FUNDS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11', 'MXRF11'];
-const BASE_URL = 'https://brapi.dev/api/quote';
 
 // URLs oficiais dos fundos
 const FUND_LINKS = {
@@ -34,11 +32,11 @@ const FUND_LINKS = {
 
 // [SEÇÃO 14] Dados Fundamentais (Fallback)
 let FUNDAMENTALS = {
-  "JURO11": { "vp": 101.32, "pffo": 8.5, "dy": 11.69, "benchmark": "IMAB 5 + 2%", "taxaRef": 6.0, "updated": "2026-06-19" },
-  "DIVS11": { "vp": 9.50, "pffo": 10.2, "dy": 13.00, "benchmark": "IDkA IPCA 5A + 2%", "taxaRef": 6.0, "updated": "2026-06-19" },
-  "CRAA11": { "vp": 8.90, "pffo": 9.7, "dy": 14.95, "benchmark": "IPCA+ longo", "taxaRef": 6.0, "updated": "2026-06-19" },
-  "CDII11": { "vp": 9.20, "pffo": 9.9, "dy": 17.09, "benchmark": "CDI", "taxaRef": 10.75, "updated": "2026-06-19" },
-  "MXRF11": { "vp": 10.36, "pffo": 11.5, "dy": 12.50, "benchmark": "CDI", "taxaRef": 10.75, "updated": "2026-06-19" }
+  "JURO11": { "vp": 101.32, "pvp": 0.95, "pffo": 8.5, "dy": 11.69, "benchmark": "IMAB 5 + 2%", "taxaRef": 6.0, "updated": "2026-06-19" },
+  "DIVS11": { "vp": 9.50, "pvp": 1.00, "pffo": 10.2, "dy": 13.00, "benchmark": "IDkA IPCA 5A + 2%", "taxaRef": 6.0, "updated": "2026-06-19" },
+  "CRAA11": { "vp": 8.90, "pvp": 1.00, "pffo": 9.7, "dy": 14.95, "benchmark": "IPCA+ longo", "taxaRef": 6.0, "updated": "2026-06-19" },
+  "CDII11": { "vp": 9.20, "pvp": 1.00, "pffo": 9.9, "dy": 17.09, "benchmark": "CDI", "taxaRef": 10.75, "updated": "2026-06-19" },
+  "MXRF11": { "vp": 10.36, "pvp": 0.98, "pffo": 11.5, "dy": 12.50, "benchmark": "CDI", "taxaRef": 10.75, "updated": "2026-06-19" }
 };
 
 // Dados macroeconômicos
@@ -51,11 +49,6 @@ let MACRO_DATA = {
 const grid = document.getElementById('grid');
 const refreshBtn = document.getElementById('refresh-btn');
 const lastUpdateEl = document.getElementById('last-update');
-const cacheKey = 'sparta_price_cache';
-const cacheTimeKey = 'sparta_price_ts';
-const CACHE_TIME = 60 * 60 * 1000;
-
-let currentPrices = [];
 
 // ============================================
 // FIREBASE - CARREGAMENTO DE DADOS
@@ -186,7 +179,7 @@ async function saveFundamentals() {
     
     await loadFundamentalsFromFirestore();
     showFundamentalsDate();
-    renderData(currentPrices);
+    renderData();
     
     if (statusEl) {
       statusEl.textContent = '✅ Dados salvos com sucesso!';
@@ -237,7 +230,7 @@ async function saveMacroToStorage() {
     MACRO_DATA.taxaCdi = parseFloat(taxaCdi) || null;
     MACRO_DATA.taxaIpca = parseFloat(taxaIpca) || null;
     
-    renderData(currentPrices);
+    renderData();
     
     btn.textContent = '✅ Salvo!';
     setTimeout(() => {
@@ -482,11 +475,9 @@ function classifyFiInfraCdi(yieldCdi) {
   }
 }
 
-function classifyFund(ticker, priceData) {
-  const fund = FUNDAMENTALS[ticker] || {};
-  const pvp = (fund.vp && priceData.regularMarketPrice) 
-    ? (priceData.regularMarketPrice / fund.vp) 
-    : null;
+function classifyFund(ticker, fundData) {
+  const fund = fundData || FUNDAMENTALS[ticker] || {};
+  const pvp = fund.pvp;
   
   const taxaCdi = parseFloat(document.getElementById('taxa-cdi')?.value) || null;
   const taxaIpca = parseFloat(document.getElementById('taxa-ipca')?.value) || null;
@@ -513,8 +504,8 @@ function formatNumber(val, decimals = 2, suffix = '') {
 }
 
 // [SEÇÃO 20.5] Lógica de Score do Fundo
-function calculateFundScore(ticker, fund, price) {
-  const pvp = (fund.vp && price) ? (price / fund.vp) : 1.0;
+function calculateFundScore(ticker, fund) {
+  const pvp = fund.pvp ?? 1.0;
   const spread = (fund.dy && fund.taxaRef) ? (fund.dy - fund.taxaRef) : 0;
   const pffo = fund.pffo || 10;
 
@@ -570,21 +561,20 @@ function calculateFundScore(ticker, fund, price) {
 // ============================================
 
 // [SEÇÃO 21] Criar Card
-function createCard(priceData) {
-  const { symbol, regularMarketPrice } = priceData;
-  const fund = FUNDAMENTALS[symbol] || {};
+function createCard(ticker) {
+  const fund = FUNDAMENTALS[ticker] || {};
   
-  const scoreData = calculateFundScore(symbol, fund, regularMarketPrice);
+  const scoreData = calculateFundScore(ticker, fund);
   
-  const googleUrl = `https://www.google.com/finance/quote/${symbol}:BVMF`;
-  const fundLink = FUND_LINKS[symbol] || { site: googleUrl, nome: 'Google Finance' };
+  const googleUrl = `https://www.google.com/finance/quote/${ticker}:BVMF`;
+  const fundLink = FUND_LINKS[ticker] || { site: googleUrl, nome: 'Google Finance' };
   
   let pvpClass = '';
   if (scoreData.pvp < 1) pvpClass = 'pvp-discount';
   else if (scoreData.pvp > 1) pvpClass = 'pvp-premium';
 
   let mxrfNote = '';
-  if (symbol === 'MXRF11') {
+  if (ticker === 'MXRF11') {
     mxrfNote = `<div class="note mxrf-note">📁 <b>Fonte do VP:</b> Documentos > Planilha de Fundamentos ou Informe Mensal no site da XP Asset.</div>`;
   }
 
@@ -599,13 +589,9 @@ function createCard(priceData) {
         ${scoreData.classification} (${scoreData.score})
       </div>
       
-      <div class="ticker">${symbol}</div>
+      <div class="ticker">${ticker}</div>
       <div class="name">Fundo Sparta Asset Management</div>
       <div class="metrics">
-        <div class="metric">
-          <span class="label">Preço</span>
-          <span class="value">R$ ${formatNumber(regularMarketPrice)}</span>
-        </div>
         <div class="metric ${pvpClass}">
           <span class="label">P/VP</span>
           <span class="value">${formatNumber(scoreData.pvp)}</span>
@@ -669,81 +655,17 @@ function loadMacroFromStorage() {
   }
 }
 
-// [SEÇÃO 23] Buscar Preços via Brapi + CORS Proxy
-async function fetchPrices() {
-  const now = Date.now();
-  const cached = localStorage.getItem(cacheKey);
-  const cachedTs = localStorage.getItem(cacheTimeKey);
-
-  if (cached && cachedTs && (now - Number(cachedTs) < CACHE_TIME)) {
-    return JSON.parse(cached);
-  }
-
-  try {
-    const prices = [];
-    for (const ticker of FUNDS) {
-      try {
-        const r = await fetch(`${BASE_URL}/${ticker}?token=${API_KEY}`).then(res => res.json());
-        if (r.results?.length) {
-          prices.push({ symbol: r.results[0].symbol, regularMarketPrice: r.results[0].regularMarketPrice });
-        }
-      } catch (e) {
-        console.warn('Falha ao buscar', ticker, e.message);
-      }
-      await new Promise(r => setTimeout(r, 300));
-    }
-    if (prices.length === 0) throw new Error('Nenhum preço obtido');
-    
-    localStorage.setItem(cacheKey, JSON.stringify(prices));
-    localStorage.setItem(cacheTimeKey, String(now));
-    return prices;
-  } catch (err) {
-    console.error('Erro ao buscar preços:', err);
-    return [];
-  }
-}
-
-// [SEÇÃO 24] Fetch Data
-async function fetchData(force = false) {
-  if (force) {
-    localStorage.removeItem(cacheKey);
-    refreshBtn.disabled = true;
-    refreshBtn.textContent = 'Atualizando...';
-  }
-  
+// [SEÇÃO 24] Renderizar a partir dos Fundamentos
+function renderFundamentals() {
   renderSkeleton();
-
-  const prices = await fetchPrices();
-  currentPrices = FUNDS.map(ticker => {
-    const price = prices.find(p => p.symbol === ticker);
-    return price ? { ...price } : { symbol: ticker, regularMarketPrice: null };
-  });
-
-  currentPrices.sort((a, b) => {
-    const vpA = FUNDAMENTALS[a.symbol]?.vp;
-    const vpB = FUNDAMENTALS[b.symbol]?.vp;
-    const priceA = a.regularMarketPrice;
-    const priceB = b.regularMarketPrice;
-    
-    const pvpA = (vpA && priceA) ? (priceA / vpA) : 999;
-    const pvpB = (vpB && priceB) ? (priceB / vpB) : 999;
-    
-    return pvpA - pvpB;
-  });
-
-  renderData(currentPrices);
+  grid.innerHTML = FUNDS.map(createCard).join('');
   const lastFundUpdate = Object.values(FUNDAMENTALS)[0]?.updated || 'n/a';
-  lastUpdateEl.textContent = `Preço: ${new Date().toLocaleTimeString('pt-BR')} | Fund: ${lastFundUpdate}`;
-  
-  if (force) {
-    refreshBtn.disabled = false;
-    refreshBtn.textContent = 'Atualizar';
-  }
+  lastUpdateEl.textContent = `Fundamentos atualizados em: ${lastFundUpdate}`;
 }
 
 // [SEÇÃO 25] Render Data
-function renderData(data) {
-  grid.innerHTML = data.map(createCard).join('');
+function renderData() {
+  grid.innerHTML = FUNDS.map(createCard).join('');
 }
 
 // [SEÇÃO 26] Mostrar Data dos Fundamentos
@@ -793,7 +715,7 @@ refreshBtn.addEventListener('click', async function() {
             console.log("Sinal enviado para o Firebase com sucesso!");
             
             setTimeout(() => {
-                fetchData(true);
+                renderData();
                 btn.textContent = originalText;
                 btn.style.color = "";
                 btn.style.opacity = "1";
@@ -819,16 +741,16 @@ refreshBtn.addEventListener('click', async function() {
 
 setupAuthListener();
 
-// Carrega dados do Firestore e depois busca preços
+// Inicialização: carrega Firestore, renderiza cards
 Promise.all([
   loadFundamentalsFromFirestore(),
   loadMacroFromFirestore()
 ]).then(([fundLoaded, macroLoaded]) => {
   console.log('🔥 Firestore carregado - Fundamentos:', fundLoaded, 'Macro:', macroLoaded);
   showFundamentalsDate();
-  fetchData(true);
+  renderFundamentals();
 }).catch(err => {
   console.error('❌ Erro na inicialização:', err);
   showFundamentalsDate();
-  fetchData(true);
+  renderFundamentals();
 });

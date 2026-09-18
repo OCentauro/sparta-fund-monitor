@@ -9,18 +9,19 @@ jobs:
   send-reminder:
     runs-on: ubuntu-latest
     steps:
-      - name: Send Telegram Message
-        run: |
-          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-            -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-            -d text="📅 *Lembrete Mensal: Atualização de Fundamentos*
-          
-          Olá! Hoje é dia 11. É hora de atualizar os indicadores (P/VP, P/FFO, DY) no Sparta Fund Monitor.
-          
-          🔗 *Clique abaixo para editar o arquivo diretamente no GitHub:*
-          https://github.com/OCentauro/sparta-fund-monitor/edit/main/fundamentals.json
-          
-          *Fontes para consulta:*
-          - StatusInvest
-          - Investidor10" \
-            -d parse_mode="Markdown"
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: 📦 Instalar dependências
+        run: pip install requests
+
+      - name: 🤖 Enviar lembrete Telegram
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python telegram_reminder.py

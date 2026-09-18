@@ -1,18 +1,22 @@
 # telegram_reminder.py
-# Este script envia um lembrete via Telegram para atualizar os fundamentos dos FIIs monitorados.
+# Lembrete via Telegram para atualizar fundamentos dos FIIs.
+# Lê credenciais do ambiente (GitHub Secrets) — sem valores hardcoded.
 
-
+import os
 import requests
 from datetime import datetime
 
-# ⚠️ SUBSTITUA pelos seus dados
-TELEGRAM_BOT_TOKEN = '8908144574:AAEkO4OLTGUgxSnHZ0VBp-r26-0YJKwPrBg'
-CHAT_ID = '200754126'
+TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+
+if not TELEGRAM_BOT_TOKEN:
+    raise ValueError("❌ TELEGRAM_BOT_TOKEN não definido nas variáveis de ambiente")
+if not CHAT_ID:
+    raise ValueError("❌ TELEGRAM_CHAT_ID não definido nas variáveis de ambiente")
 
 def send_reminder():
     today = datetime.now()
-    
-    # Usa HTML em vez de Markdown (mais tolerante)
+
     message = "<b>📊 Lembrete: Atualizar Fundamentos Sparta</b>\n\n"
     message += "📅 Data: " + today.strftime('%d/%m/%Y') + "\n\n"
     message += "Os informes mensais dos FIIs foram publicados.\n\n"
@@ -26,14 +30,14 @@ def send_reminder():
     message += "git push origin main</pre>\n\n"
     message += "📌 <b>Fundos monitorados:</b> JURO11, DIVS11, CRAA11, CDII11\n\n"
     message += "Bom investimento! 🚀"
-    
-    url = "https://api.telegram.org/bot" + TELEGRAM_BOT_TOKEN + "/sendMessage"
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     data = {
         'chat_id': CHAT_ID,
         'text': message,
-        'parse_mode': 'HTML'  # Mudou de Markdown para HTML
+        'parse_mode': 'HTML'
     }
-    
+
     try:
         response = requests.post(url, json=data, timeout=10)
         response.raise_for_status()

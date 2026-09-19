@@ -18,7 +18,7 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 
 // [SEÇÃO 13] Configurações do App
-const APP_VERSION = '1.6.0';
+const APP_VERSION = '1.7.0';
 const FUNDS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11', 'MXRF11'];
 
 // URLs oficiais dos fundos
@@ -29,6 +29,9 @@ const FUND_LINKS = {
   'CDII11': { site: 'https://www.sparta.com.br/sparta-cdii11/', nome: 'Sparta RI' },
   'MXRF11': { site: 'https://www.xpasset.com.br/fundos/maxi-renda/', nome: 'XP Asset' }
 };
+
+// TODO: Substituir pela URL real gerada no Firebase Console > Functions após deploy
+const PRICE_FN_URL = "https://us-central1-sparta-fund-monitor.cloudfunctions.net/getMarketPrice";
 
 // [SEÇÃO 14] Dados Fundamentais (Fallback)
 let FUNDAMENTALS = {
@@ -560,9 +563,17 @@ function calculateFundScore(ticker, fund) {
 // RENDERIZAÇÃO DE CARDS
 // ============================================
 
-// [SEÇÃO 21] Criar Card
-function createCard(ticker) {
+// [SEÇÃO 21] Criar Card com Preço ao Vivo
+function createCard(ticker, livePrice) {
   const fund = FUNDAMENTALS[ticker] || {};
+  const price = livePrice?.price ?? null;
+  const source = livePrice?.source ?? null;
+
+  const sourceBadge = source === "brapi" ? '<span class="badge badge-live">🟢 Ao vivo</span>'
+                    : source === "cache" ? '<span class="badge badge-cache">📦 Cache (15min)</span>'
+                    : source === "cache-expirado" ? '<span class="badge badge-stale">⏰ Cache expirado</span>'
+                    : source === "estimado" ? '<span class="badge badge-estimate">📐 Estimado (VP×P/VP)</span>'
+                    : '';
   
   const scoreData = calculateFundScore(ticker, fund);
   
@@ -592,6 +603,11 @@ function createCard(ticker) {
       <div class="ticker">${ticker}</div>
       <div class="name">Fundo Sparta Asset Management</div>
       <div class="metrics">
+        <div class="metric">
+          <span class="label">Preço</span>
+          <span class="value">R$ ${formatNumber(price)}</span>
+          ${sourceBadge ? `<div class="source-row">${sourceBadge}</div>` : ''}
+        </div>
         <div class="metric ${pvpClass}">
           <span class="label">P/VP</span>
           <span class="value">${formatNumber(scoreData.pvp)}</span>
@@ -655,12 +671,36 @@ function loadMacroFromStorage() {
   }
 }
 
-// [SEÇÃO 24] Renderizar a partir dos Fundamentos
-function renderFundamentals() {
+// [SEÇÃO 23] Buscar Preços ao Vivo via Cloud Function
+async function fetchLivePrices() {
+  const prices = {};
+  const requests = FUNDS.map(async (ticker) => {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+      const res = await fetch(`${PRICE_FN_URL}?ticker=${ticker}`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      prices[ticker] = { price: data.price, source: data.source };
+    } catch (err) {
+      const fund = FUNDAMENTALS[ticker];
+      const estimated = fund?.vp && fund?.pvp ? fund.vp * fund.pvp : null;
+      prices[ticker] = { price: estimated, source: estimated ? "estimado" : null };
+    }
+  });
+  await Promise.all(requests);
+  return prices;
+}
+
+// [SEÇÃO 24] Renderizar a partir dos Fundamentos + Preços
+function renderFundamentals(livePrices = {}) {
   renderSkeleton();
-  grid.innerHTML = FUNDS.map(createCard).join('');
+  grid.innerHTML = FUNDS.map(ticker => createCard(ticker, livePrices[ticker])).join('');
   const lastFundUpdate = Object.values(FUNDAMENTALS)[0]?.updated || 'n/a';
-  lastUpdateEl.textContent = `Fundamentos atualizados em: ${lastFundUpdate}`;
+  const liveCount = Object.values(livePrices).filter(p => p?.source === 'brapi').length;
+  const cacheCount = Object.values(livePrices).filter(p => p?.source === 'cache').length;
+  lastUpdateEl.textContent = `Fundamentos: ${lastFundUpdate} | Preços: ${liveCount} ao vivo, ${cacheCount} em cache`;
 }
 
 // [SEÇÃO 25] Render Data
@@ -759,16 +799,20 @@ refreshBtn.addEventListener('click', async function() {
 
 setupAuthListener();
 
-// Inicialização: carrega Firestore, renderiza cards
+// Inicialização: carrega Firestore, renderiza cards, busca preços ao vivo
 Promise.all([
   loadFundamentalsFromFirestore(),
   loadMacroFromFirestore()
-]).then(([fundLoaded, macroLoaded]) => {
+]).then(async ([fundLoaded, macroLoaded]) => {
   console.log('🔥 Firestore carregado - Fundamentos:', fundLoaded, 'Macro:', macroLoaded);
   showFundamentalsDate();
-  renderFundamentals();
+  renderFundamentals({});  // render inicial sem preços
+  
+  // Buscar preços ao vivo em paralelo (Cloud Function, 5s timeout, fallback interno)
+  const livePrices = await fetchLivePrices();
+  renderFundamentals(livePrices);  // re-render com preços + badges
 }).catch(err => {
   console.error('❌ Erro na inicialização:', err);
   showFundamentalsDate();
-  renderFundamentals();
+  renderFundamentals({});
 });

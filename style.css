@@ -584,3 +584,10 @@ button.danger {
     font-size: 0.85rem;
   }
 }
+/* [SEÇÃO 12] Badges de Fonte do Preço */
+.source-row { margin-top: 2px; }
+.badge { font-size: 9px; padding: 1px 6px; border-radius: 8px; display: inline-block; white-space: nowrap; }
+.badge-live { background: #1a6b1a; color: #8f8; }
+.badge-cache { background: #3a3a5a; color: #aaf; }
+.badge-stale { background: #5a4a2a; color: #fa6; }
+.badge-estimate { background: #4a3a2a; color: #fa8; }

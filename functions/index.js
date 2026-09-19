@@ -4,30 +4,78 @@ const https = require("https");
 
 admin.initializeApp();
 
-// ── Proxy de Preços: busca da Brapi server-side (sem CORS) ──
+// ── Preço de Mercado com Cache Inteligente (15 min TTL) ──
+exports.getMarketPrice = onRequest({ cors: true }, async (req, res) => {
+  const { ticker } = req.query;
+  if (!ticker) return res.status(400).json({ error: "Parâmetro 'ticker' obrigatório" });
+
+  const TTL = 15 * 60 * 1000;
+  const now = Date.now();
+
+  try {
+    const cacheRef = admin.firestore().collection("priceCache").doc(ticker.toUpperCase());
+    const cacheDoc = await cacheRef.get();
+
+    if (cacheDoc.exists) {
+      const data = cacheDoc.data();
+      const age = now - data.timestamp;
+      if (age < TTL) {
+        console.log(`📦 Cache hit: ${ticker} = R$ ${data.price}`);
+        return res.json({ price: data.price, source: "cache" });
+      }
+      console.log(`🔄 Cache expirado: ${ticker}`);
+    }
+
+    const brapiToken = process.env.BRAPIDEV_TOKEN;
+    if (!brapiToken) return res.status(500).json({ error: "BRAPIDEV_TOKEN não configurado" });
+
+    const price = await new Promise((resolve, reject) => {
+      const url = `https://brapi.dev/api/quote/${ticker.toUpperCase()}?token=${brapiToken}`;
+      https.get(url, (res) => {
+        let body = "";
+        res.on("data", chunk => body += chunk);
+        res.on("end", () => {
+          try {
+            const json = JSON.parse(body);
+            json.results?.[0]?.regularMarketPrice
+              ? resolve(json.results[0].regularMarketPrice)
+              : reject(new Error("Preço não encontrado"));
+          } catch (e) { reject(e); }
+        });
+      }).on("error", reject);
+    });
+
+    await cacheRef.set({ price, ticker: ticker.toUpperCase(), timestamp: now });
+    console.log(`💰 BrAPI: ${ticker} = R$ ${price}`);
+    res.json({ price, source: "brapi" });
+
+  } catch (err) {
+    console.error(`❌ getMarketPrice(${ticker}):`, err.message);
+    const stale = await admin.firestore().collection("priceCache").doc(ticker.toUpperCase()).get();
+    if (stale.exists) {
+      return res.json({ price: stale.data().price, source: "cache-expirado", warning: err.message });
+    }
+    res.status(502).json({ error: err.message });
+  }
+});
+
+// ── Proxy de Preços (legado) ──
 exports.getPrices = onRequest({ cors: true }, async (req, res) => {
-  const token = process.env.BRAPIDEV_TOKEN || "7EpuGco9ML58FkFmZVyBWY";
+  const token = process.env.BRAPIDEV_TOKEN;
   const tickers = (req.query.tickers || "JURO11,DIVS11,CRAA11,CDII11,MXRF11").split(",");
   const results = [];
-
   for (const ticker of tickers) {
     try {
       const data = await new Promise((resolve, reject) => {
         const url = `https://brapi.dev/api/quote/${ticker.trim()}?token=${token}`;
         https.get(url, (res) => {
           let body = "";
-          res.on("data", (chunk) => (body += chunk));
+          res.on("data", chunk => body += chunk);
           res.on("end", () => {
             try {
               const json = JSON.parse(body);
-              if (json.results?.length) {
-                resolve(json.results[0]);
-              } else {
-                reject(new Error(`Sem resultados para ${ticker}`));
-              }
-            } catch (e) {
-              reject(e);
-            }
+              json.results?.length ? resolve(json.results[0]) : reject(new Error("Sem resultados"));
+            } catch (e) { reject(e); }
           });
         }).on("error", reject);
       });
@@ -36,83 +84,43 @@ exports.getPrices = onRequest({ cors: true }, async (req, res) => {
       results.push({ symbol: ticker.trim(), regularMarketPrice: null, error: e.message });
     }
   }
-
   res.json({ results });
 });
 
-// ── Trigger de deploy (autenticado via Firebase) ──
+// ── Trigger de deploy (autenticado) ──
 exports.triggerSpartaUpdate = onRequest({ cors: true }, async (req, res) => {
-    console.log("🚀 [1] Função acionada com sucesso!");
-
-    // ── Verificar autenticação Firebase ──
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        console.error("❌ Token de autenticação ausente");
-        return res.status(401).json({ error: "Token de autenticação ausente" });
-    }
-
-    const idToken = authHeader.split("Bearer ")[1];
+    if (!authHeader?.startsWith("Bearer ")) return res.status(401).json({ error: "Token ausente" });
     try {
-        const decodedToken = await admin.auth().verifyIdToken(idToken);
-        console.log("✅ Usuário autenticado:", decodedToken.uid, decodedToken.email || "(sem email)");
+      const decoded = await admin.auth().verifyIdToken(authHeader.split("Bearer ")[1]);
+      console.log("✅ Autenticado:", decoded.uid);
     } catch (err) {
-        console.error("❌ Token inválido:", err.message);
-        return res.status(401).json({ error: "Token inválido ou expirado" });
+      return res.status(401).json({ error: "Token inválido" });
     }
-
-    // ── Lógica existente de acionamento do robô ──
     const pat = process.env.HERMES_PAT || process.env.BRAPIDEV_TOKEN;
-    if (!pat) {
-        console.error("❌ [2] ERRO CRÍTICO: Token não encontrado nas variáveis de ambiente");
-        return res.status(500).json({ error: "Token de configuração ausente" });
-    }
-    console.log("✅ [3] Token encontrado. Início do token:", pat.substring(0, 15) + "...");
-
+    if (!pat) return res.status(500).json({ error: "Token de configuração ausente" });
     const data = JSON.stringify({ ref: "main" });
-    const workflowFile = "deploy.yml";
-
     const options = {
-        hostname: "api.github.com",
-        path: `/repos/OCentauro/sparta-fund-monitor/actions/workflows/${workflowFile}/dispatches`,
-        method: "POST",
-        headers: {
-            "Accept": "application/vnd.github.v3+json",
-            "Authorization": `Bearer ${pat}`,
-            "Content-Type": "application/json",
-            "User-Agent": "Sparta-Fund-Monitor"
-        }
+      hostname: "api.github.com",
+      path: "/repos/OCentauro/sparta-fund-monitor/actions/workflows/deploy.yml/dispatches",
+      method: "POST",
+      headers: { "Accept": "application/vnd.github.v3+json", "Authorization": `Bearer ${pat}`, "Content-Type": "application/json" }
     };
-
     try {
-        console.log("📡 [4] Enviando requisição para o GitHub...");
-        const githubResponse = await new Promise((resolve, reject) => {
-            const reqHttps = https.request(options, (res) => {
-                let body = '';
-                res.on('data', chunk => body += chunk);
-                res.on('end', () => resolve({ statusCode: res.statusCode, body: body }));
-            });
-            reqHttps.on("error", (err) => {
-                console.error("❌ [5] Erro de rede na requisição:", err.message);
-                reject(err);
-            });
-            reqHttps.write(data);
-            reqHttps.end();
+      const githubResponse = await new Promise((resolve, reject) => {
+        const reqHttps = https.request(options, (res) => {
+          let body = "";
+          res.on("data", chunk => body += chunk);
+          res.on("end", () => resolve({ statusCode: res.statusCode, body }));
         });
-
-        console.log("📥 [6] Resposta do GitHub recebida. Status Code:", githubResponse.statusCode);
-
-        if (githubResponse.statusCode === 204) {
-            console.log("✅ [7] SUCESSO! Workflow disparado no GitHub.");
-            res.status(200).json({ success: true, message: "Robô acionado com sucesso!" });
-        } else {
-            console.error(`⚠️ [8] GitHub retornou erro ${githubResponse.statusCode}. Detalhes:`, githubResponse.body);
-            res.status(500).json({
-                error: `GitHub API retornou ${githubResponse.statusCode}`,
-                details: githubResponse.body
-            });
-        }
+        reqHttps.on("error", reject);
+        reqHttps.write(data);
+        reqHttps.end();
+      });
+      githubResponse.statusCode === 204
+        ? res.status(200).json({ success: true })
+        : res.status(500).json({ error: `GitHub retornou ${githubResponse.statusCode}` });
     } catch (error) {
-        console.error("💥 [9] Exceção não tratada capturada:", error.message);
-        res.status(500).json({ error: error.message });
+      res.status(500).json({ error: error.message });
     }
 });

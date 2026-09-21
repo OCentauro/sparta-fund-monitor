@@ -5,7 +5,21 @@ const https = require("https");
 admin.initializeApp();
 
 // ── Preço de Mercado com Cache Inteligente (15 min TTL) ──
+function setCorsHeaders(res) {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+}
+
 exports.getMarketPrice = onRequest({ cors: true }, async (req, res) => {
+  setCorsHeaders(res);
+
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    res.set('Access-Control-Max-Age', '3600');
+    return res.status(204).send('');
+  }
+
   const { ticker } = req.query;
   if (!ticker) return res.status(400).json({ error: "Parâmetro 'ticker' obrigatório" });
 

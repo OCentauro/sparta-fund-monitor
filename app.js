@@ -30,8 +30,8 @@ const FUND_LINKS = {
   'MXRF11': { site: 'https://www.xpasset.com.br/fundos/maxi-renda/', nome: 'XP Asset' }
 };
 
-// TODO: Substituir pela URL real gerada no Firebase Console > Functions após deploy
-const PRICE_FN_URL = "https://us-central1-sparta-fund-monitor.cloudfunctions.net/getMarketPrice";
+// URL da Cloud Function para buscar preços com cache inteligente
+const PRICE_FN_URL = "https://getmarketprice-e4tnxzli6a-uc.a.run.app";
 
 // [SEÇÃO 14] Dados Fundamentais (Fallback)
 let FUNDAMENTALS = {

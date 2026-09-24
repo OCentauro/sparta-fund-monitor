@@ -9,7 +9,7 @@
  * Para cada ticker:
  *   1. GET https://brapi.dev/api/quote/${TICKER}?token=${BRAPI_TOKEN}
  *      → extrai regularMarketPrice (preço atual)
- *   2. GET https://brapi.dev/api/dividends/${TICKER}?token=${BRAPI_TOKEN}
+ *   2. GET https://brapi.dev/api/dividend/${TICKER}?token=${BRAPI_TOKEN}
  *      → filtra pagamentos dos últimos 12 meses e soma (soma_12m);
  *        pega o provento mais recente (ultimo_provento)
  *   3. Calcula:
@@ -27,7 +27,7 @@ import admin from 'firebase-admin';
 // ─── Configuração ────────────────────────────────────────────────────────────
 const TICKERS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11', 'MXRF11'];
 const QUOTE_URL = 'https://brapi.dev/api/quote/';
-const DIVIDENDS_URL = 'https://brapi.dev/api/dividends/';
+const DIVIDENDS_URL = 'https://brapi.dev/api/dividend/';
 const TIMEOUT_MS = 10_000; // 10s por requisição
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'sparta-fund-monitor';
 

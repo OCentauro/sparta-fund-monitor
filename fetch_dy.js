@@ -8,8 +8,13 @@
  *
  * Para cada ticker:
  *   1. GET https://brapi.dev/api/quote/${TICKER}?token=${BRAPI_TOKEN}
- *   2. Extrai do JSON: dividendYield (decimal → %), lastDividend, regularMarketPrice
- *   3. Calcula: dy_preditivo = (lastDividend * 12 / regularMarketPrice) * 100
+ *      → extrai regularMarketPrice (preço atual)
+ *   2. GET https://brapi.dev/api/dividends/${TICKER}?token=${BRAPI_TOKEN}
+ *      → filtra pagamentos dos últimos 12 meses e soma (soma_12m);
+ *        pega o provento mais recente (ultimo_provento)
+ *   3. Calcula:
+ *        dy_ttm       = (soma_12m / preco) * 100
+ *        dy_preditivo = (ultimo_provento * 12 / preco) * 100
  *   4. Salva no Firestore: fundamentals/{ticker} com { merge: true }
  *
  * Auth do firebase-admin: use UMA das opções abaixo:
@@ -21,7 +26,8 @@ import admin from 'firebase-admin';
 
 // ─── Configuração ────────────────────────────────────────────────────────────
 const TICKERS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11', 'MXRF11'];
-const BASE_URL = 'https://brapi.dev/api/quote/';
+const QUOTE_URL = 'https://brapi.dev/api/quote/';
+const DIVIDENDS_URL = 'https://brapi.dev/api/dividends/';
 const TIMEOUT_MS = 10_000; // 10s por requisição
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'sparta-fund-monitor';
 
@@ -64,6 +70,48 @@ function toNumber(v) {
   return Number.isFinite(n) ? n : NaN;
 }
 
+/** Arredonda para 2 casas decimais. */
+function round2(n) {
+  return Math.round(n * 100) / 100;
+}
+
+/**
+ * Normaliza a resposta do endpoint /dividends em uma lista ordenada
+ * (mais recente primeiro) de objetos { date: Date, value: number }.
+ * Aceita variações de formato da Brapi (results[], array puro,
+ * campos dividend/dividendo/value, date/data/compositionDate).
+ */
+function normalizarDividendos(json) {
+  let raw = [];
+  if (Array.isArray(json?.results)) raw = json.results;
+  else if (Array.isArray(json?.data)) raw = json.data;
+  else if (Array.isArray(json)) raw = json;
+  else if (json?.results && !Array.isArray(json.results)) raw = [json.results];
+
+  const list = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+
+    const dateRaw =
+      item.date ?? item.data ?? item.compositionDate ??
+      item.pay_date ?? item.paymentDate ?? null;
+    const d = dateRaw ? new Date(dateRaw) : null;
+    if (!d || Number.isNaN(d.getTime())) continue;
+
+    const valueRaw =
+      item.dividend ?? item.dividendo ?? item.value ??
+      item.amount ?? item.provento ?? item.unitAmount ?? null;
+    const v = toNumber(valueRaw);
+    if (!Number.isFinite(v)) continue;
+
+    list.push({ date: d, value: v });
+  }
+
+  // Mais recente primeiro
+  list.sort((a, b) => b.date - a.date);
+  return list;
+}
+
 // ─── Inicialização do Firebase Admin ────────────────────────────────────────
 function initAdmin() {
   if (admin.apps.length) return;
@@ -90,45 +138,45 @@ async function main() {
 
   for (const ticker of TICKERS) {
     try {
-      const url = `${BASE_URL}${ticker}?token=${BRAPI_TOKEN}`;
-      console.log(`\n[${ticker}] GET ${BASE_URL}${ticker}?token=***`);
-      const json = await fetchJson(url);
+      // 1) Preço atual via /quote
+      console.log(`\n[${ticker}] GET ${QUOTE_URL}${ticker}?token=***`);
+      const quoteJson = await fetchJson(`${QUOTE_URL}${ticker}?token=${BRAPI_TOKEN}`);
+      const result = Array.isArray(quoteJson?.results) ? quoteJson.results[0] : null;
+      const precoAtual = toNumber(result?.regularMarketPrice);
 
-      const result = Array.isArray(json?.results) ? json.results[0] : null;
-      if (!result) {
-        console.warn(`⚠️  [${ticker}] resposta sem "results" — pulando.`);
+      if (!Number.isFinite(precoAtual) || precoAtual <= 0) {
+        console.warn(`⚠️  [${ticker}] regularMarketPrice indisponível — pulando.`);
         pulados++;
         continue;
       }
 
-      // 1) DY TTM: Brapi retorna em decimal (ex: 0.1169) → converte para % (11.69)
-      const dyDecimal = toNumber(result.dividendYield);
-      const dyTtm = Number.isFinite(dyDecimal)
-        ? Math.round(dyDecimal * 100 * 100) / 100
-        : NaN;
+      // 2) Histórico de proventos via /dividends
+      console.log(`[${ticker}] GET ${DIVIDENDS_URL}${ticker}?token=***`);
+      const divJson = await fetchJson(`${DIVIDENDS_URL}${ticker}?token=${BRAPI_TOKEN}`);
+      const dividendos = normalizarDividendos(divJson);
 
-      // 2) Último provento pago (R$/cota)
-      const lastDividend = toNumber(result.lastDividend);
-
-      // 3) Preço atual de mercado
-      const precoAtual = toNumber(result.regularMarketPrice);
-
-      if (!Number.isFinite(dyTtm)) {
-        console.warn(`⚠️  [${ticker}] dividendYield indisponível na API — pulando.`);
+      if (dividendos.length === 0) {
+        console.warn(`⚠️  [${ticker}] nenhum provento retornado por /dividends — pulando.`);
         pulados++;
         continue;
       }
 
-      // 4) DY preditivo: (lastDividend * 12) / regularMarketPrice * 100
+      // Filtra últimos 12 meses
+      const corte = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+      const ultimos12m = dividendos.filter((d) => d.date >= corte);
+
+      const soma12m = ultimos12m.reduce((acc, d) => acc + d.value, 0);
+      const ultimoProvento = dividendos[0].value; // já ordenado (mais recente primeiro)
+
+      // 3) Cálculos
+      const dyTtm = round2((soma12m / precoAtual) * 100);
+
       let dyPreditivo = null;
-      if (Number.isFinite(lastDividend) && Number.isFinite(precoAtual) && precoAtual > 0) {
-        dyPreditivo = Math.round(((lastDividend * 12) / precoAtual) * 100 * 100) / 100;
-      } else {
-        console.warn(
-          `⚠️  [${ticker}] lastDividend/preço indisponíveis — salvando apenas dy_ttm.`
-        );
+      if (Number.isFinite(ultimoProvento)) {
+        dyPreditivo = round2(((ultimoProvento * 12) / precoAtual) * 100);
       }
 
+      // 4) Persistência
       const payload = {
         dy_ttm: dyTtm,
         dy_updated_at: admin.firestore.FieldValue.serverTimestamp(),
@@ -137,7 +185,8 @@ async function main() {
 
       await db.collection('fundamentals').doc(ticker).set(payload, { merge: true });
       console.log(
-        `✅ [${ticker}] dy_ttm=${dyTtm}% | dy_preditivo=${dyPreditivo ?? 'n/d'}% salvo.`
+        `✅ [${ticker}] dy_ttm=${dyTtm}% (${ultimos12m.length} proventos/12m) | ` +
+        `dy_preditivo=${dyPreditivo ?? 'n/d'}% salvo.`
       );
       ok++;
     } catch (err) {

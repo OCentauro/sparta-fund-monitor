@@ -35,11 +35,11 @@ const PRICE_FN_URL = "https://getmarketprice-e4tnxzli6a-uc.a.run.app";
 
 // [SEÇÃO 14] Dados Fundamentais (Fallback)
 let FUNDAMENTALS = {
-  "JURO11": { "vp": 101.32, "pvp": 0.95, "pffo": 8.5, "dy": 11.69, "benchmark": "IMAB 5 + 2%", "taxaRef": 6.0, "updated": "2026-06-19" },
-  "DIVS11": { "vp": 9.50, "pvp": 1.00, "pffo": 10.2, "dy": 13.00, "benchmark": "IDkA IPCA 5A + 2%", "taxaRef": 6.0, "updated": "2026-06-19" },
-  "CRAA11": { "vp": 8.90, "pvp": 1.00, "pffo": 9.7, "dy": 14.95, "benchmark": "IPCA+ longo", "taxaRef": 6.0, "updated": "2026-06-19" },
-  "CDII11": { "vp": 9.20, "pvp": 1.00, "pffo": 9.9, "dy": 17.09, "benchmark": "CDI", "taxaRef": 10.75, "updated": "2026-06-19" },
-  "MXRF11": { "vp": 10.36, "pvp": 0.98, "pffo": 11.5, "dy": 12.50, "benchmark": "CDI", "taxaRef": 10.75, "updated": "2026-06-19" }
+  "JURO11": { "vp": 101.32, "pvp": 0.95, "pffo": 8.5, "dy": 11.69, "dy_ttm": null, "dy_preditivo": null, "benchmark": "IMAB 5 + 2%", "taxaRef": 6.0, "updated": "2026-06-19" },
+  "DIVS11": { "vp": 9.50, "pvp": 1.00, "pffo": 10.2, "dy": 13.00, "dy_ttm": null, "dy_preditivo": null, "benchmark": "IDkA IPCA 5A + 2%", "taxaRef": 6.0, "updated": "2026-06-19" },
+  "CRAA11": { "vp": 8.90, "pvp": 1.00, "pffo": 9.7, "dy": 14.95, "dy_ttm": null, "dy_preditivo": null, "benchmark": "IPCA+ longo", "taxaRef": 6.0, "updated": "2026-06-19" },
+  "CDII11": { "vp": 9.20, "pvp": 1.00, "pffo": 9.9, "dy": 17.09, "dy_ttm": null, "dy_preditivo": null, "benchmark": "CDI", "taxaRef": 10.75, "updated": "2026-06-19" },
+  "MXRF11": { "vp": 10.36, "pvp": 0.98, "pffo": 11.5, "dy": 12.50, "dy_ttm": null, "dy_preditivo": null, "benchmark": "CDI", "taxaRef": 10.75, "updated": "2026-06-19" }
 };
 
 // Dados macroeconômicos
@@ -151,6 +151,7 @@ async function saveFundamentals() {
       const dyEl = document.getElementById(`dy-${ticker}`);
       const benchEl = document.getElementById(`benchmark-${ticker}`);
       const taxaEl = document.getElementById(`taxaRef-${ticker}`);
+      const dyPrevEl = document.getElementById(`dy_preditivo-${ticker}`);
       
       const vp = vpEl ? parseFloat(vpEl.value) : null;
       const pffo = pffoEl ? parseFloat(pffoEl.value) : null;
@@ -169,6 +170,7 @@ async function saveFundamentals() {
         vp: isNaN(vp) ? null : vp,
         pffo: isNaN(pffo) ? null : pffo,
         dy: isNaN(dy) ? null : dy,
+        dy_preditivo: (dyPrevEl && dyPrevEl.value.trim() !== '' && !isNaN(parseFloat(dyPrevEl.value))) ? parseFloat(dyPrevEl.value) : null,
         benchmark: benchmark,
         taxaRef: isNaN(taxaRef) ? null : taxaRef,
         updated: new Date().toISOString().split('T')[0],
@@ -320,6 +322,7 @@ function showEditModal() {
       <div>Cota Pat. (R$)</div>
       <div>P/FFO</div>
       <div>DY %</div>
+      <div>DY (12M) / DY Prev.</div>
       <div>Benchmark / Taxa</div>
     </div>
   `;
@@ -332,6 +335,10 @@ function showEditModal() {
         <input type="number" step="0.01" id="vp-${ticker}" placeholder="0.00" value="${fund.vp !== undefined && fund.vp !== null ? fund.vp : ''}">
         <input type="number" step="0.01" id="pffo-${ticker}" placeholder="0.00" value="${fund.pffo !== undefined && fund.pffo !== null ? fund.pffo : ''}">
         <input type="number" step="0.01" id="dy-${ticker}" placeholder="0.00" value="${fund.dy !== undefined && fund.dy !== null ? fund.dy : ''}">
+        <div style="display: flex; gap: 4px;">
+          <input type="number" step="0.01" id="dy_ttm-${ticker}" placeholder="12M" readonly value="${fund.dy_ttm !== undefined && fund.dy_ttm !== null ? fund.dy_ttm : ''}" title="Preenchido automaticamente pelo script fetch_dy.js (Status Invest)" style="flex: 1; background: #f0f0f0; color: #666; cursor: not-allowed;">
+          <input type="number" step="0.01" id="dy_preditivo-${ticker}" placeholder="Prev." value="${fund.dy_preditivo !== undefined && fund.dy_preditivo !== null ? fund.dy_preditivo : ''}" title="DY preditivo — pode ser ajustado manualmente" style="flex: 1;">
+        </div>
         <div style="display: flex; gap: 4px;">
           <input type="text" id="benchmark-${ticker}" placeholder="Ex: CDI" value="${fund.benchmark || ''}" style="flex: 2;">
           <input type="number" step="0.01" id="taxaRef-${ticker}" placeholder="Taxa" value="${fund.taxaRef !== undefined && fund.taxaRef !== null ? fund.taxaRef : ''}" style="flex: 1;">
@@ -617,8 +624,12 @@ function createCard(ticker, livePrice) {
           <span class="value">${formatNumber(fund.pffo)}</span>
         </div>
         <div class="metric">
-          <span class="label">DY</span>
-          <span class="value">${formatNumber(fund.dy, 2)}%</span>
+          <span class="label">DY (12M)</span>
+          <span class="value">${fund.dy_ttm != null ? formatNumber(fund.dy_ttm, 2) + '%' : '-'}</span>
+        </div>
+        <div class="metric">
+          <span class="label">DY Prev.</span>
+          <span class="value">${fund.dy_preditivo != null ? formatNumber(fund.dy_preditivo, 2) + '%' : '-'}</span>
         </div>
         <div class="metric" style="grid-column: span 2;">
           <span class="label">Cota Patrimonial</span>

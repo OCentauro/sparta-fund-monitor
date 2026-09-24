@@ -173,7 +173,7 @@ async function saveFundamentals() {
         taxaRef: isNaN(taxaRef) ? null : taxaRef,
         updated: new Date().toISOString().split('T')[0],
         updatedAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      }, { merge: true });
     });
     
     console.log('📤 Enviando para Firestore...');
@@ -507,8 +507,8 @@ function formatNumber(val, decimals = 2, suffix = '') {
 }
 
 // [SEÇÃO 20.5] Lógica de Score do Fundo
-function calculateFundScore(ticker, fund) {
-  const pvp = fund.pvp ?? 1.0;
+ function calculateFundScore(ticker, fund, price) {
+  const pvp = (price != null && fund.vp != null && fund.vp > 0) ? (price / fund.vp) : (fund.pvp ?? 1.0);
   const spread = (fund.dy && fund.taxaRef) ? (fund.dy - fund.taxaRef) : 0;
   const pffo = fund.pffo || 10;
 
@@ -575,7 +575,7 @@ function createCard(ticker, livePrice) {
                     : source === "estimado" ? '<span class="badge badge-estimate">📐 Estimado (VP×P/VP)</span>'
                     : '';
   
-  const scoreData = calculateFundScore(ticker, fund);
+  const scoreData = calculateFundScore(ticker, fund, price);
   
   const googleUrl = `https://www.google.com/finance/quote/${ticker}:BVMF`;
   const fundLink = FUND_LINKS[ticker] || { site: googleUrl, nome: 'Google Finance' };
@@ -695,6 +695,7 @@ async function fetchLivePrices() {
 
 // [SEÇÃO 24] Renderizar a partir dos Fundamentos + Preços
 function renderFundamentals(livePrices = {}) {
+  window.__lastLivePrices = livePrices;
   renderSkeleton();
   grid.innerHTML = FUNDS.map(ticker => createCard(ticker, livePrices[ticker])).join('');
   const lastFundUpdate = Object.values(FUNDAMENTALS)[0]?.updated || 'n/a';
@@ -705,7 +706,7 @@ function renderFundamentals(livePrices = {}) {
 
 // [SEÇÃO 25] Render Data
 function renderData() {
-  grid.innerHTML = FUNDS.map(createCard).join('');
+  const lastPrices = window.__lastLivePrices || {}; grid.innerHTML = FUNDS.map(ticker => createCard(ticker, lastPrices[ticker])).join('');
 }
 
 // [SEÇÃO 26] Mostrar Data dos Fundamentos

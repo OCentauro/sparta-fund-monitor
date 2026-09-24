@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 /**
- * fetch_dy.js — Automação de DY (Dividend Yield) de FIIs via Status Invest
+ * fetch_dy.js — Automação de DY (Dividend Yield) de FIIs via Brapi API
  *
- * Uso:  node fetch_dy.js
+ * Uso:
+ *   export BRAPI_TOKEN='seu-token'
+ *   node fetch_dy.js
  *
  * Para cada ticker:
- *   1. GET https://statusinvest.com.br/fundos-imobiliarios/${TICKER}
- *   2. Extrai: DY 12m (dy_ttm), último provento (R$) e preço atual (R$)
- *   3. Calcula: dy_preditivo = (ultimo_provento * 12 / preco_atual) * 100
+ *   1. GET https://brapi.dev/api/quote/${TICKER}?token=${BRAPI_TOKEN}
+ *   2. Extrai do JSON: dividendYield (decimal → %), lastDividend, regularMarketPrice
+ *   3. Calcula: dy_preditivo = (lastDividend * 12 / regularMarketPrice) * 100
  *   4. Salva no Firestore: fundamentals/{ticker} com { merge: true }
  *
  * Auth do firebase-admin: use UMA das opções abaixo:
@@ -15,71 +17,32 @@
  *   b) export FIREBASE_SERVICE_ACCOUNT='<conteúdo JSON da chave>'
  */
 
-import * as cheerio from 'cheerio';
 import admin from 'firebase-admin';
 
 // ─── Configuração ────────────────────────────────────────────────────────────
 const TICKERS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11', 'MXRF11'];
-const BASE_URL = 'https://statusinvest.com.br/fundos-imobiliarios/';
+const BASE_URL = 'https://brapi.dev/api/quote/';
 const TIMEOUT_MS = 10_000; // 10s por requisição
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'sparta-fund-monitor';
+
+const BRAPI_TOKEN = process.env.BRAPI_TOKEN;
+if (!BRAPI_TOKEN) {
+  console.error('❌ BRAPI_TOKEN não configurado. Defina a variável de ambiente antes de rodar.');
+  console.error('   Ex.: export BRAPI_TOKEN="seu-token-aqui" && node fetch_dy.js');
+  process.exit(1);
+}
 
 const HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
     '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-  'Accept':
-    'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-  'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+  'Accept': 'application/json',
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Converte "12,45 %" / "R$ 8,50" / "12.45" em number (NaN se falhar). */
-function parseBR(texto) {
-  if (!texto) return NaN;
-  const limpo = texto.replace(/[^\d.,-]/g, '').trim();
-  if (!limpo) return NaN;
-  let n;
-  if (limpo.includes(',')) {
-    // formato brasileiro: remove pontos de milhar, vírgula → decimal
-    n = parseFloat(limpo.replace(/\./g, '').replace(',', '.'));
-  } else {
-    n = parseFloat(limpo);
-  }
-  return Number.isFinite(n) ? n : NaN;
-}
-
-/** Busca um valor numérico na página a partir de um rótulo de coluna. */
-function extrairValor($, labelRegex) {
-  let valor = null;
-  $('.column-label, .card-title, strong, span').each((_, el) => {
-    const $el = $(el);
-    const txt = $el.text().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    if (!labelRegex.test(txt)) return;
-    // 1º tentativa: número dentro do próprio elemento
-    let v = parseBR($el.text());
-    if (!Number.isFinite(v)) {
-      // 2º tentativa: elemento irmão / parente próximo (layout do Status Invest)
-      const proximo =
-        $el.next().first() ||
-        $el.parent().children().last();
-      v = parseBR(proximo.text());
-    }
-    if (!Number.isFinite(v)) {
-      // 3º tentativa: texto completo do card pai
-      v = parseBR($el.closest('.column-wrapper, .card, div').first().text());
-    }
-    if (Number.isFinite(v)) {
-      valor = v;
-      return false; // interrompe o .each()
-    }
-  });
-  return valor;
-}
-
-/** Faz o GET com timeout de 10s e user-agent realista. */
-async function fetchHtml(url) {
+/** Faz o GET com timeout de 10s e retorna o JSON parseado. */
+async function fetchJson(url) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
@@ -89,10 +52,16 @@ async function fetchHtml(url) {
       redirect: 'follow',
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return await res.text();
+    return await res.json();
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** Garante que o valor é um número finito (ou NaN). */
+function toNumber(v) {
+  const n = typeof v === 'string' ? parseFloat(v.replace(',', '.')) : Number(v);
+  return Number.isFinite(n) ? n : NaN;
 }
 
 // ─── Inicialização do Firebase Admin ────────────────────────────────────────
@@ -121,38 +90,42 @@ async function main() {
 
   for (const ticker of TICKERS) {
     try {
-      const url = `${BASE_URL}${ticker.toLowerCase()}`;
-      console.log(`\n[${ticker}] GET ${url}`);
-      const html = await fetchHtml(url);
-      const $ = cheerio.load(html);
+      const url = `${BASE_URL}${ticker}?token=${BRAPI_TOKEN}`;
+      console.log(`\n[${ticker}] GET ${BASE_URL}${ticker}?token=***`);
+      const json = await fetchJson(url);
 
-      // 1) DY 12 meses (TTM)
-      const dyTtm = extrairValor($, /dividend\s*yield\s*\(?\s*12\s*(meses|m)/i);
-
-      // 2) Último provento (valor em R$/cota)
-      const ultimoProvento = extrairValor($, /ultimo\s*provento/i);
-
-      // 3) Preço atual da cota
-      const precoAtual = extrairValor($, /preco\s*atual/i);
-
-      // Validação mínima: precisa ter ao menos o DY TTM
-      if (!Number.isFinite(dyTtm)) {
-        console.warn(`⚠️  [${ticker}] DY 12m não encontrado no HTML — pulando.`);
+      const result = Array.isArray(json?.results) ? json.results[0] : null;
+      if (!result) {
+        console.warn(`⚠️  [${ticker}] resposta sem "results" — pulando.`);
         pulados++;
         continue;
       }
 
-      // 4) DY preditivo: (ultimo_provento * 12) / preco_atual * 100
+      // 1) DY TTM: Brapi retorna em decimal (ex: 0.1169) → converte para % (11.69)
+      const dyDecimal = toNumber(result.dividendYield);
+      const dyTtm = Number.isFinite(dyDecimal)
+        ? Math.round(dyDecimal * 100 * 100) / 100
+        : NaN;
+
+      // 2) Último provento pago (R$/cota)
+      const lastDividend = toNumber(result.lastDividend);
+
+      // 3) Preço atual de mercado
+      const precoAtual = toNumber(result.regularMarketPrice);
+
+      if (!Number.isFinite(dyTtm)) {
+        console.warn(`⚠️  [${ticker}] dividendYield indisponível na API — pulando.`);
+        pulados++;
+        continue;
+      }
+
+      // 4) DY preditivo: (lastDividend * 12) / regularMarketPrice * 100
       let dyPreditivo = null;
-      if (
-        Number.isFinite(ultimoProvento) &&
-        Number.isFinite(precoAtual) &&
-        precoAtual > 0
-      ) {
-        dyPreditivo = Math.round(((ultimoProvento * 12) / precoAtual) * 100 * 100) / 100;
+      if (Number.isFinite(lastDividend) && Number.isFinite(precoAtual) && precoAtual > 0) {
+        dyPreditivo = Math.round(((lastDividend * 12) / precoAtual) * 100 * 100) / 100;
       } else {
         console.warn(
-          `⚠️  [${ticker}] provento/preço indisponíveis — salvando apenas dy_ttm.`
+          `⚠️  [${ticker}] lastDividend/preço indisponíveis — salvando apenas dy_ttm.`
         );
       }
 

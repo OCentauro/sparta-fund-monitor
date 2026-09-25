@@ -1,14 +1,13 @@
 #!/usr/bin/env node
 /**
- * fetch_dy.js — Automação de DY de FIIs via Fundamentus
- * Fonte: https://fundamentus.com.br/fii_resultado.php
+ * fetch_dy.js — Automação de DY via Fundamentus
+ * Princípio: Atualiza apenas dados verificados. Sem fallbacks, sem poluição.
  */
 
 import * as cheerio from 'cheerio';
 import admin from 'firebase-admin';
 
-const TICKERS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11', 'MXRF11'];
-const URL_FUNDAMENTUS = 'https://fundamentus.com.br/fii_resultado.php';
+const TICKERS = ['MXRF11', 'CRAA11', 'JURO11', 'DIVS11', 'CDII11'];
 const PROJECT_ID = process.env.FIREBASE_PROJECT_ID || 'sparta-fund-monitor';
 
 const HEADERS = {
@@ -32,63 +31,52 @@ async function main() {
   initAdmin();
   const db = admin.firestore();
   
-  console.log(`\n📡 Buscando dados no Fundamentus...`);
-  
+  console.log(`\n📡 Buscando dados verificados no Fundamentus...`);
+  let atualizados = 0;
+
   try {
-    const response = await fetch(URL_FUNDAMENTUS, { headers: HEADERS });
+    const response = await fetch('https://fundamentus.com.br/fii_resultado.php', { headers: HEADERS });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    let atualizados = 0;
-
     $('table tbody tr').each((_, row) => {
       const cols = $(row).find('td');
-      if (cols.length < 10) return;
-
-      const ticker = $(cols[0]).text().trim().toUpperCase();
+      if (cols.length < 5) return;
       
+      const ticker = $(cols[0]).text().trim().toUpperCase();
       if (!TICKERS.includes(ticker)) return;
 
-      // Coluna 2: Cotação (Preço)
-      const precoStr = $(cols[2]).text().trim().replace(',', '.');
-      const preco = parseFloat(precoStr);
-
-      // Coluna 9: Dividend Yield (já vem em %, ex: "11.69")
-      const dyStr = $(cols[9]).text().trim().replace(',', '.');
+      const preco = parseFloat($(cols[2]).text().trim().replace(',', '.'));
+      const dyStr = $(cols[4]).text().trim().replace(',', '.').replace('%', '');
       const dy_ttm = parseFloat(dyStr);
 
-      if (isNaN(preco) || isNaN(dy_ttm)) {
-        console.warn(`⚠️ [${ticker}] Dados numéricos inválidos. P: ${preco}, DY: ${dy_ttm}`);
-        return;
+      if (!isNaN(dy_ttm) && dy_ttm > 0) {
+        const payload = {
+          dy_ttm: dy_ttm,
+          dy_preditivo: dy_ttm,
+          dy_updated_at: admin.firestore.FieldValue.serverTimestamp(),
+        };
+
+        db.collection('fundamentals').doc(ticker).set(payload, { merge: true })
+          .then(() => {
+            console.log(`✅ [${ticker}] dy_ttm=${dy_ttm}% salvo.`);
+            atualizados++;
+          })
+          .catch(err => {
+            console.error(`❌ [${ticker}] Erro:`, err.message);
+          });
       }
-
-      // Usamos o DY TTM como base para o preditivo nesta fonte
-      const dy_preditivo = dy_ttm; 
-
-      const payload = {
-        dy_ttm: dy_ttm,
-        dy_preditivo: dy_preditivo,
-        dy_updated_at: admin.firestore.FieldValue.serverTimestamp(),
-      };
-
-      db.collection('fundamentals').doc(ticker).set(payload, { merge: true })
-        .then(() => {
-          console.log(`✅ [${ticker}] dy_ttm=${dy_ttm}% | dy_preditivo=${dy_preditivo}% salvo.`);
-          atualizados++;
-        })
-        .catch(err => {
-          console.error(`❌ [${ticker}] Erro ao salvar:`, err.message);
-        });
     });
 
     setTimeout(() => {
-      console.log(`\n Concluído: ${atualizados} fundos atualizados.`);
+      console.log(`\n🏁 Concluído: ${atualizados} fundos atualizados.`);
       process.exit(0);
-    }, 2000);
+    }, 1500);
 
   } catch (err) {
-    console.error(`\n❌ Erro fatal ao buscar dados: ${err.message}`);
+    console.error(`\n❌ Erro fatal: ${err.message}`);
     process.exit(1);
   }
 }

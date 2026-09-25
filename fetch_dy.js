@@ -4,8 +4,8 @@
  * Fonte: https://fundamentus.com.br/fii_resultado.php
  */
 
-const cheerio = require('cheerio');
-const admin = require('firebase-admin');
+import * as cheerio from 'cheerio';
+import admin from 'firebase-admin';
 
 const TICKERS = ['JURO11', 'DIVS11', 'CRAA11', 'CDII11', 'MXRF11'];
 const URL_FUNDAMENTUS = 'https://fundamentus.com.br/fii_resultado.php';
@@ -83,7 +83,7 @@ async function main() {
     });
 
     setTimeout(() => {
-      console.log(`\n🏁 Concluído: ${atualizados} fundos atualizados.`);
+      console.log(`\n Concluído: ${atualizados} fundos atualizados.`);
       process.exit(0);
     }, 2000);
 

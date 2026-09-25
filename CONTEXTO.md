@@ -19,6 +19,8 @@ O código foi **refatorado** e desmembrado em arquivos separados:
 - `functions/package.json`: Configurado com `"engines": {"node": "20"}`, `firebase-admin` e `firebase-functions`. **NÃO deve conter `"type": "module"`.**
 - `firebase.json`: Configurado com `"runtime": "nodejs20"` na seção de functions.
 - `scripts/update-fundamentals.mjs`: Script Node.js (Playwright + XLSX) rodado pelo GitHub Actions.
+- `fetch_dy.js`: **Automação de DY** (12m/TTM e preditivo) via `fetch` + cheerio, sem navegador. Atualiza `dy_ttm`/`dy_preditivo` no Firestore. Para fundos Sparta, extrai do RI oficial (wpDataTables). Para MXRF11, calcula Σ12m ÷ cotação via `fundamentus.com.br/fii_proventos.php` (bate com Status Invest ~13.23%). Use `--dry-run` para validar sem gravar.
+- `test_sparta.js`: Valida a extração de DY importando o **mesmo parser** do `fetch_dy.js` (não duplica lógica).
 - `.gitignore`: **CRUCIAL:** Deve ignorar `sparta-fund-monitor-*.json` (chaves de serviço) e `.env`.
 
 ## 4. ⚠️ Decisões Técnicas e "Gotchas" (Regras de Ouro - CRÍTICO)
@@ -27,10 +29,15 @@ O código foi **refatorado** e desmembrado em arquivos separados:
 3. **Variáveis de Ambiente:** O token da BrAPI **NÃO** pode estar no código. Deve ser injetado como Variável de Ambiente (`BRAPIDEV_TOKEN`) no Google Cloud Console (aba Variáveis e secrets do serviço Cloud Run) e o serviço deve ser **reimplantado** após a alteração.
 4. **Git e PowerShell:** O PowerShell do Windows pode adicionar caracteres BOM (`\ufeff`) ao salvar JSON, quebrando o build do Firebase. Usar `node -e` ou o VS Code com encoding UTF-8 sem BOM para editar `package.json`.
 5. **Segurança:** NUNCA fazer commit de arquivos `.json` de Service Account do Firebase ou arquivos `.env` com tokens.
+6. **DY dos fundos Sparta (descoberta importante):** o site `sparta.com.br` é WordPress + **wpDataTables renderizado no servidor**. Um `fetch` simples já traz os valores (`Cota de Mercado`, `Cota Patrimonial`, `Última Distribuição` e as 12 distribuições), então **NÃO é necessário Playwright/Puppeteer nem contornar Cloudflare**. O parser (`readWpDataTables` em `fetch_dy.js`) lê o JSON de `<input id="table_N_desc">` e as linhas `<tr id="table_<wpId>_row_<i>">`. A coluna `Dividend Yield em 12m` é publicada pela gestora e tem prioridade sobre o cálculo Σ12÷cota.
 
 ## 5. ✅ Conquistas Recentes (Versão 2.0)
 - ✅ Implementação de Cloud Function v2 (`getMarketPrice`) com cache inteligente de 15min.
 - ✅ Correção definitiva de CORS manual para Cloud Functions v2.
+- ✅ Automação do Dividend Yield (12m/TTM e Preditivo) via `fetch_dy.js` sem Puppeteer:
+  - JURO11, DIVS11, CDII11, CRAA11 direto do RI Sparta (`sparta.com.br`) via parse do wpDataTables.
+  - MXRF11 via Fundamentus (`fii_proventos.php`, Σ 12 meses ÷ cotação).
+  - Suporte a `--dry-run` para rodar e auditar sem credenciais do Google Cloud.
 - ✅ Configuração de IAM (acesso público) no Google Cloud Run.
 - ✅ Injeção segura de variáveis de ambiente (`BRAPIDEV_TOKEN`).
 - ✅ Resolução de conflitos de Node.js e BOM no PowerShell.
